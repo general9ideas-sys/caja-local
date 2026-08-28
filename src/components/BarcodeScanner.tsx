@@ -1,4 +1,3 @@
-import { Html5Qrcode, Html5QrcodeSupportedFormats } from "html5-qrcode";
 import { Lightning, X } from "@phosphor-icons/react";
 import { useEffect, useId, useRef, useState } from "react";
 import { normalizeBarcode } from "../lib/barcode";
@@ -11,22 +10,90 @@ interface BarcodeScannerProps {
   onDetected: (code: string) => void;
 }
 
-async function pickRearCamera(): Promise<string | MediaTrackConstraints> {
+type TrackCaps = MediaTrackCapabilities & {
+  focusMode?: string[];
+  torch?: boolean;
+  zoom?: { min: number; max: number };
+  pointsOfInterest?: boolean;
+};
+
+const HD: MediaTrackConstraints = {
+  width: { min: 1280, ideal: 1920 },
+  height: { min: 720, ideal: 1080 },
+  frameRate: { ideal: 30 },
+};
+
+async function getCamera(video: MediaTrackConstraints): Promise<MediaStream> {
   try {
-    const cameras = await Html5Qrcode.getCameras();
-    const back = cameras.filter((c) => /back|rear|environment/i.test(c.label));
-    const pool = back.length
-      ? back
-      : cameras.filter((c) => !/front|user|face/i.test(c.label));
-    const main =
-      pool.find((c) => /camera2\s*0/i.test(c.label)) ??
-      pool.find((c) => !/ultra|wide|uw|macro|tele/i.test(c.label)) ??
-      pool[0];
-    if (main?.id) return main.id;
+    return await navigator.mediaDevices.getUserMedia({ video, audio: false });
   } catch {
-    /* el permiso todavía no está */
+    const { width: _w, height: _h, ...fallback } = video;
+    return navigator.mediaDevices.getUserMedia({ video: fallback, audio: false });
   }
-  return { facingMode: "environment" };
+}
+
+async function openRearStream(): Promise<MediaStream> {
+  let stream = await getCamera({
+    ...HD,
+    facingMode: { ideal: "environment" },
+  });
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  const videos = devices.filter((d) => d.kind === "videoinput");
+  const main =
+    videos.find((d) => /camera2\s*0/i.test(d.label)) ??
+    videos.find(
+      (d) =>
+        /back|rear|environment/i.test(d.label) &&
+        !/ultra|wide|uw|tele|macro/i.test(d.label),
+    ) ??
+    videos.find((d) => /back|rear|environment/i.test(d.label));
+
+  const currentId = stream.getVideoTracks()[0]?.getSettings().deviceId;
+  if (main?.deviceId && main.deviceId !== currentId) {
+    stream.getTracks().forEach((track) => track.stop());
+    stream = await getCamera({
+      ...HD,
+      deviceId: { exact: main.deviceId },
+    });
+  }
+  return stream;
+}
+
+async function applyHdAndZoom(track: MediaStreamTrack) {
+  const caps = track.getCapabilities() as TrackCaps;
+  try {
+    if (caps.width?.max && caps.height?.max) {
+      await track.applyConstraints({
+        width: Math.min(1920, caps.width.max),
+        height: Math.min(1080, caps.height.max),
+      });
+    }
+  } catch {
+    /* algunos S20 ignoran el tamaño */
+  }
+
+  try {
+    if (caps.zoom && caps.zoom.min <= 1 && caps.zoom.max >= 1) {
+      await track.applyConstraints({
+        advanced: [{ zoom: 1 }],
+      });
+    }
+  } catch {
+    /* sin control de zoom */
+  }
+}
+
+async function applyContinuousFocus(track: MediaStreamTrack) {
+  const caps = track.getCapabilities() as TrackCaps;
+  try {
+    if (caps.focusMode?.includes("continuous")) {
+      await track.applyConstraints({
+        advanced: [{ focusMode: "continuous" }],
+      });
+    }
+  } catch {
+    /* el autofoco lo maneja el sistema */
+  }
 }
 
 export function BarcodeScanner({
@@ -36,18 +103,20 @@ export function BarcodeScanner({
   onClose,
   onDetected,
 }: BarcodeScannerProps) {
-  const boxId = useId().replace(/:/g, "");
-  const readerId = `barcode-reader-${boxId}`;
-  const scannerRef = useRef<Html5Qrcode | null>(null);
-  const handledRef = useRef(false);
+  const titleId = useId();
+  const manualId = useId();
+  const errorId = useId();
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const trackRef = useRef<MediaStreamTrack | null>(null);
   const onDetectedRef = useRef(onDetected);
   onDetectedRef.current = onDetected;
+  const handledRef = useRef(false);
+
   const [error, setError] = useState("");
   const [manual, setManual] = useState("");
   const [torchOn, setTorchOn] = useState(false);
   const [hasTorch, setHasTorch] = useState(false);
   const [focusHint, setFocusHint] = useState<{ x: number; y: number } | null>(null);
-  const errorId = useId();
 
   useEffect(() => {
     if (!open) return;
@@ -57,133 +126,130 @@ export function BarcodeScanner({
     setTorchOn(false);
     setHasTorch(false);
     let cancelled = false;
+    let timer = 0;
+    let stream: MediaStream | null = null;
 
-    const timer = window.setTimeout(async () => {
-      const el = document.getElementById(readerId);
-      if (!el || cancelled) return;
-      const scanner = new Html5Qrcode(readerId, {
-        verbose: false,
-        useBarCodeDetectorIfSupported: true,
-        formatsToSupport: [
-          Html5QrcodeSupportedFormats.EAN_13,
-          Html5QrcodeSupportedFormats.EAN_8,
-          Html5QrcodeSupportedFormats.UPC_A,
-          Html5QrcodeSupportedFormats.UPC_E,
-          Html5QrcodeSupportedFormats.CODE_128,
-          Html5QrcodeSupportedFormats.CODE_39,
-          Html5QrcodeSupportedFormats.ITF,
-          Html5QrcodeSupportedFormats.QR_CODE,
-        ],
-      });
-      scannerRef.current = scanner;
+    async function start() {
+      const video = videoRef.current;
+      if (!video) return;
       try {
-        const camera = await pickRearCamera();
-        await scanner.start(
-          camera,
-          {
-            fps: 10,
-            disableFlip: true,
-            qrbox: (viewfinderWidth, viewfinderHeight) => ({
-              width: Math.floor(viewfinderWidth * 0.86),
-              height: Math.floor(Math.min(viewfinderHeight * 0.22, 200)),
-            }),
-          },
-          (text) => {
-            if (handledRef.current) return;
-            handledRef.current = true;
-            onDetectedRef.current(normalizeBarcode(text));
-          },
-          () => undefined,
-        );
-        if (cancelled) return;
-
-        try {
-          const features = scanner.getRunningTrackCameraCapabilities();
-          setHasTorch(features.torchFeature().isSupported());
-          const zoomFeature = features.zoomFeature();
-          if (zoomFeature.isSupported()) {
-            const min = zoomFeature.min();
-            const max = zoomFeature.max();
-            const standard = min <= 1 && 1 <= max ? 1 : min;
-            await zoomFeature.apply(standard);
-          }
-        } catch {
-          /* sin linterna */
+        stream = await openRearStream();
+        if (cancelled) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
         }
+        const track = stream.getVideoTracks()[0];
+        trackRef.current = track;
+        await applyHdAndZoom(track);
+        video.srcObject = stream;
+        video.muted = true;
+        video.playsInline = true;
+        video.setAttribute("playsinline", "true");
+        await video.play();
+        if (cancelled) return;
+        await new Promise((r) => window.setTimeout(r, 200));
+        if (cancelled) return;
+        await applyContinuousFocus(track);
+        const caps = track.getCapabilities() as TrackCaps;
+        setHasTorch(Boolean(caps.torch));
+
+        const Detector = window.BarcodeDetector;
+        let detector: BarcodeDetector | null = null;
+        if (Detector) {
+          const wanted = [
+            "ean_13",
+            "ean_8",
+            "upc_a",
+            "upc_e",
+            "code_128",
+            "code_39",
+            "itf",
+            "qr_code",
+          ];
+          try {
+            const supported = await Detector.getSupportedFormats();
+            const formats = wanted.filter((f) => supported.includes(f));
+            detector = new Detector(formats.length ? { formats } : undefined);
+          } catch {
+            detector = new Detector();
+          }
+        }
+
+        const tick = async () => {
+          if (cancelled || handledRef.current || !detector || video.readyState < 2) {
+            if (!cancelled && !handledRef.current) timer = window.setTimeout(tick, 250);
+            return;
+          }
+          try {
+            const codes = await detector.detect(video);
+            const value = codes[0]?.rawValue;
+            if (value) {
+              handledRef.current = true;
+              onDetectedRef.current(normalizeBarcode(value));
+              return;
+            }
+          } catch {
+            /* frame no listo */
+          }
+          if (!cancelled && !handledRef.current) timer = window.setTimeout(tick, 250);
+        };
+        timer = window.setTimeout(tick, 400);
       } catch (err) {
         if (cancelled) return;
-        const name = err instanceof Error ? err.name : "";
+        const name = err instanceof DOMException ? err.name : "";
         if (name === "NotAllowedError") {
           setError(
-            "El navegador bloqueó la cámara. Permití el acceso en la configuración del sitio, o escribí el código.",
-          );
-        } else if (window.isSecureContext === false) {
-          setError(
-            "La cámara del celular necesita una conexión segura. Abrí el enlace https del sistema en este teléfono.",
+            "El navegador bloqueó la cámara. Permití el acceso en Chrome y volvé a intentar.",
           );
         } else {
-          setError(
-            "No se pudo abrir la cámara. Probá en Chrome y tocá Permitir cuando pida la cámara.",
-          );
+          setError("No se pudo abrir la cámara. Probá de nuevo en Chrome.");
         }
       }
-    }, 120);
+    }
+
+    void start();
 
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
-      const scanner = scannerRef.current;
-      scannerRef.current = null;
-      if (scanner) {
-        scanner
-          .stop()
-          .then(() => scanner.clear())
-          .catch(() => undefined);
-      }
+      trackRef.current = null;
+      const video = videoRef.current;
+      if (video) video.srcObject = null;
+      stream?.getTracks().forEach((t) => t.stop());
     };
-  }, [open, readerId]);
+  }, [open]);
 
   async function toggleTorch() {
-    const scanner = scannerRef.current;
-    if (!scanner) return;
+    const track = trackRef.current;
+    if (!track) return;
     const next = !torchOn;
     try {
-      await scanner.getRunningTrackCameraCapabilities().torchFeature().apply(next);
+      await track.applyConstraints({ advanced: [{ torch: next }] });
       setTorchOn(next);
     } catch {
       setHasTorch(false);
     }
   }
 
-  async function focusAt(clientX: number, clientY: number, target: HTMLElement) {
-    const video =
-      target.querySelector("video") ??
-      target.closest(".barcode-stage")?.querySelector("video");
-    if (!video) return;
+  async function focusAt(clientX: number, clientY: number, host: HTMLElement) {
+    const video = videoRef.current;
+    const track = trackRef.current;
+    if (!video || !track) return;
     const rect = video.getBoundingClientRect();
+    setFocusHint({ x: clientX - host.getBoundingClientRect().left, y: clientY - host.getBoundingClientRect().top });
+    window.setTimeout(() => setFocusHint(null), 600);
+    const caps = track.getCapabilities() as TrackCaps;
     const x = (clientX - rect.left) / rect.width;
     const y = (clientY - rect.top) / rect.height;
-    setFocusHint({ x: clientX - rect.left, y: clientY - rect.top });
-    window.setTimeout(() => setFocusHint(null), 700);
-
-    const stream = video.srcObject;
-    if (!(stream instanceof MediaStream)) return;
-    const track = stream.getVideoTracks()[0];
-    if (!track) return;
-    const caps = track.getCapabilities() as MediaTrackCapabilities & {
-      focusMode?: string[];
-      pointsOfInterest?: boolean;
-    };
-    const advanced: Array<Record<string, unknown>> = [];
-    if (caps.focusMode?.includes("continuous")) advanced.push({ focusMode: "continuous" });
-    if (caps.pointsOfInterest) advanced.push({ pointsOfInterest: [{ x, y }] });
-    if (!advanced.length) return;
     try {
-      await track.applyConstraints({
-        advanced: advanced as unknown as MediaTrackConstraintSet[],
-      });
+      if (caps.focusMode?.includes("continuous")) {
+        await track.applyConstraints({ advanced: [{ focusMode: "continuous" }] });
+      }
+      if (caps.pointsOfInterest) {
+        await track.applyConstraints({ advanced: [{ pointsOfInterest: [{ x, y }] }] });
+      }
     } catch {
-      /* el celular no soporta tap-to-focus */
+      /* sin tap-to-focus */
     }
   }
 
@@ -192,13 +258,20 @@ export function BarcodeScanner({
   return (
     <div className="fixed inset-0 z-[70] flex flex-col bg-ink text-white">
       <div
-        className="relative min-h-0 flex-1"
+        className="relative min-h-0 flex-1 bg-ink"
         onPointerDown={(e) => {
           if ((e.target as HTMLElement).closest("button, input, label, form")) return;
           void focusAt(e.clientX, e.clientY, e.currentTarget);
         }}
       >
-        <div id={readerId} className="barcode-stage absolute inset-0" />
+        <video
+          ref={videoRef}
+          className="h-full w-full bg-ink object-contain"
+          autoPlay
+          muted
+          playsInline
+          controls={false}
+        />
         {focusHint ? (
           <span
             className="pointer-events-none absolute size-16 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white"
@@ -206,6 +279,9 @@ export function BarcodeScanner({
             aria-hidden="true"
           />
         ) : null}
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+          <div className="h-28 w-[88%] rounded-xl border-2 border-white/80" />
+        </div>
 
         <div className="pointer-events-none absolute inset-x-0 top-0 bg-gradient-to-b from-ink/80 to-transparent p-4 pt-[max(1rem,env(safe-area-inset-top))]">
           <div className="pointer-events-auto flex items-center justify-between gap-3">
@@ -217,7 +293,7 @@ export function BarcodeScanner({
             >
               <X size={26} aria-hidden="true" />
             </button>
-            <h2 id={`${readerId}-title`} className="font-display min-w-0 flex-1 text-lg font-bold">
+            <h2 id={titleId} className="font-display min-w-0 flex-1 text-lg font-bold">
               {title}
             </h2>
             {hasTorch ? (
@@ -235,10 +311,6 @@ export function BarcodeScanner({
             ) : null}
           </div>
         </div>
-
-        <p className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-[6.5rem] px-6 text-center text-sm font-semibold text-white drop-shadow">
-          Poné el código en el centro, sin acercar demasiado el celular
-        </p>
       </div>
 
       <div className="bg-ink px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3">
@@ -264,11 +336,11 @@ export function BarcodeScanner({
             onDetected(code);
           }}
         >
-          <label htmlFor={`${readerId}-manual`} className="text-sm font-semibold text-white">
+          <label htmlFor={manualId} className="text-sm font-semibold text-white">
             O escribí el código
           </label>
           <input
-            id={`${readerId}-manual`}
+            id={manualId}
             value={manual}
             onChange={(e) => setManual(e.target.value)}
             className="focus-ring mt-1.5 min-h-14 w-full rounded-2xl border-0 bg-white px-4 font-display text-lg tabular text-foreground"

@@ -108,28 +108,3 @@ button:disabled,
   box-shadow: 0 0 0 3px #fff, 0 0 0 6px var(--color-ring);
   outline: none;
 }
-
-.barcode-stage {
-  overflow: hidden;
-  background: #0f172a;
-}
-
-.barcode-stage video {
-  width: 100% !important;
-  height: 100% !important;
-  object-fit: contain !important;
-  background: #0f172a;
-}
-
-.barcode-stage canvas {
-  opacity: 0 !important;
-  pointer-events: none !important;
-}
-
-.barcode-stage img {
-  display: none !important;
-}
-
-.barcode-stage #qr-shaded-region {
-  border-width: 4px !important;
-}

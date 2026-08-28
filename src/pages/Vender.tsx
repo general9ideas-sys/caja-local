@@ -310,7 +310,7 @@ export function VenderPage() {
       <BarcodeScanner
         open={scanOpen}
         title="Escanear para cobrar"
-        hint="Usá la cámara de atrás, sin zoom. Si hay poca luz, prendé la linterna."
+        hint="La cámara tiene que verse nítida, como en la app de fotos. Poné el código en el recuadro."
         onClose={() => setScanOpen(false)}
         onDetected={applyBarcode}
       />
