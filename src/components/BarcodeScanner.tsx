@@ -505,22 +505,22 @@ export function BarcodeScanner({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[70] flex flex-col bg-ink text-white">
-      <div
-        className="relative min-h-0 flex-1 bg-ink"
-        onPointerDown={(e) => {
-          if ((e.target as HTMLElement).closest("button, input, label, form")) return;
-          void focusAt(e.clientX, e.clientY, e.currentTarget);
-        }}
-      >
+    <div className="fixed inset-0 z-[70] overflow-hidden bg-ink text-white">
         <video
           ref={videoRef}
-          className="h-full w-full bg-ink object-contain"
+          className="absolute inset-0 h-full w-full bg-ink object-cover object-center"
           autoPlay
           muted
           playsInline
           controls={false}
         />
+      <div
+        className="absolute inset-0"
+        onPointerDown={(e) => {
+          if ((e.target as HTMLElement).closest("button, input, label, form")) return;
+          void focusAt(e.clientX, e.clientY, e.currentTarget);
+        }}
+      >
         {focusHint ? (
           <span
             className="pointer-events-none absolute size-16 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white"
@@ -528,11 +528,11 @@ export function BarcodeScanner({
             aria-hidden="true"
           />
         ) : null}
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <div className="h-28 w-[88%] rounded-xl border-2 border-white/80" />
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center pb-36">
+          <div className="h-40 w-[92%] max-w-none rounded-2xl border-[3px] border-white/90 shadow-[0_0_0_9999px_rgba(15,23,42,0.28)]" />
         </div>
 
-        <div className="pointer-events-none absolute inset-x-0 top-0 bg-gradient-to-b from-ink/80 to-transparent p-4 pt-[max(1rem,env(safe-area-inset-top))]">
+        <div className="pointer-events-none absolute inset-x-0 top-0 bg-gradient-to-b from-ink/80 to-transparent p-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
           <div className="pointer-events-auto flex items-center justify-between gap-3">
             <button
               type="button"
@@ -560,10 +560,16 @@ export function BarcodeScanner({
             ) : null}
           </div>
         </div>
+      </div>
 
+      <div className="absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-ink via-ink/90 to-transparent px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-8">
         {showLenses ? (
-          <div className="pointer-events-auto absolute inset-x-0 bottom-3 flex justify-center">
-            <div className="flex items-center gap-2 rounded-full bg-black/55 px-2 py-1.5" role="group" aria-label="Lente de la cámara">
+          <div className="mb-3 flex justify-center">
+            <div
+              className="flex items-center gap-1 rounded-full bg-black/55 px-1.5 py-1"
+              role="group"
+              aria-label="Lente de la cámara"
+            >
               {(["0.5", "1", "3"] as Lens[]).map((value) => (
                 <button
                   key={value}
@@ -580,21 +586,19 @@ export function BarcodeScanner({
             </div>
           </div>
         ) : null}
-      </div>
 
-      <div className="bg-ink px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3">
         {error ? (
           <div
             id={errorId}
             role="alert"
             tabIndex={-1}
-            className="mb-3 rounded-2xl bg-red-50 px-4 py-3 text-sm font-medium text-destructive"
+            className="mb-2 rounded-2xl bg-red-50 px-4 py-3 text-sm font-medium text-destructive"
           >
             <p className="font-display font-semibold">No se pudo usar la cámara</p>
             <p className="mt-1">{error}</p>
           </div>
         ) : (
-          <p className="mb-3 text-sm text-white/80">{hint}</p>
+          <p className="mb-2 text-center text-sm text-white/85">{hint}</p>
         )}
 
         <form
@@ -605,31 +609,24 @@ export function BarcodeScanner({
             onDetected(code);
           }}
         >
-          <label htmlFor={manualId} className="text-sm font-semibold text-white">
+          <label htmlFor={manualId} className="sr-only">
             O escribí el código
           </label>
-          <input
-            id={manualId}
-            value={manual}
-            onChange={(e) => setManual(e.target.value)}
-            className="focus-ring mt-1.5 min-h-14 w-full rounded-2xl border-0 bg-white px-4 font-display text-lg tabular text-foreground"
-            placeholder="Ej: 7790895000117"
-            autoComplete="off"
-            inputMode="numeric"
-          />
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="focus-ring min-h-14 rounded-2xl bg-white/15 text-base font-bold"
-            >
-              Cancelar
-            </button>
+          <div className="flex gap-2">
+            <input
+              id={manualId}
+              value={manual}
+              onChange={(e) => setManual(e.target.value)}
+              className="focus-ring min-h-12 min-w-0 flex-1 rounded-2xl border-0 bg-white px-3 font-display text-base tabular text-foreground"
+              placeholder="O escribí el código"
+              autoComplete="off"
+              inputMode="numeric"
+            />
             <button
               type="submit"
-              className="focus-ring min-h-14 rounded-2xl bg-primary text-base font-bold text-on-primary"
+              className="focus-ring min-h-12 shrink-0 rounded-2xl bg-primary px-4 text-sm font-bold text-on-primary"
             >
-              Usar código
+              Usar
             </button>
           </div>
         </form>
