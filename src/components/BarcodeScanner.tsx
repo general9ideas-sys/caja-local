@@ -32,6 +32,44 @@ async function getCamera(video: MediaTrackConstraints): Promise<MediaStream> {
   }
 }
 
+function isFrontCam(label: string) {
+  return /front|user|face|delantera/i.test(label);
+}
+
+function isUltraWide(label: string) {
+  return /ultra|uw|super.?wide|\b0\s*[.,]\s*5\b|panoram/i.test(label);
+}
+
+function isTeleCam(label: string) {
+  return /tele|\b3\s*x\b|\b3\s*[.,]\s*0\b/i.test(label);
+}
+
+function isOneX(label: string) {
+  return /\b1\s*[.,]\s*0\b|\b1\s*x\b/i.test(label);
+}
+
+/** En Samsung, camera2 0 suele ser 0.5x; camera2 2 es la 1.0x. */
+function pickStandardRear(videos: MediaDeviceInfo[]): MediaDeviceInfo | undefined {
+  const back = videos.filter((d) => !isFrontCam(d.label));
+  if (!back.length) return undefined;
+
+  const namedOneX = back.find(
+    (d) => isOneX(d.label) && !isUltraWide(d.label) && !isTeleCam(d.label),
+  );
+  if (namedOneX) return namedOneX;
+
+  const usable = back.filter((d) => !isUltraWide(d.label) && !isTeleCam(d.label));
+  const samsungMain = usable.find((d) => /camera2\s*2\b/i.test(d.label));
+  if (samsungMain) return samsungMain;
+
+  const notUltraIndex = usable.filter((d) => !/camera2\s*0\b/i.test(d.label));
+  if (notUltraIndex.length) return notUltraIndex[0];
+  if (usable.length) return usable[0];
+
+  if (back.length >= 2) return back[1];
+  return back[0];
+}
+
 async function openRearStream(): Promise<MediaStream> {
   let stream = await getCamera({
     ...HD,
@@ -39,14 +77,7 @@ async function openRearStream(): Promise<MediaStream> {
   });
   const devices = await navigator.mediaDevices.enumerateDevices();
   const videos = devices.filter((d) => d.kind === "videoinput");
-  const main =
-    videos.find((d) => /camera2\s*0/i.test(d.label)) ??
-    videos.find(
-      (d) =>
-        /back|rear|environment/i.test(d.label) &&
-        !/ultra|wide|uw|tele|macro/i.test(d.label),
-    ) ??
-    videos.find((d) => /back|rear|environment/i.test(d.label));
+  const main = pickStandardRear(videos);
 
   const currentId = stream.getVideoTracks()[0]?.getSettings().deviceId;
   if (main?.deviceId && main.deviceId !== currentId) {
@@ -59,7 +90,7 @@ async function openRearStream(): Promise<MediaStream> {
   return stream;
 }
 
-async function applyHdAndZoom(track: MediaStreamTrack) {
+async function applyHd(track: MediaStreamTrack) {
   const caps = track.getCapabilities() as TrackCaps;
   try {
     if (caps.width?.max && caps.height?.max) {
@@ -71,15 +102,20 @@ async function applyHdAndZoom(track: MediaStreamTrack) {
   } catch {
     /* algunos S20 ignoran el tamaño */
   }
+}
 
+async function applyOneXZoom(track: MediaStreamTrack) {
+  const caps = track.getCapabilities() as TrackCaps;
+  if (!caps.zoom) return;
+  const target = caps.zoom.min <= 1 && caps.zoom.max >= 1 ? 1 : caps.zoom.min;
   try {
-    if (caps.zoom && caps.zoom.min <= 1 && caps.zoom.max >= 1) {
-      await track.applyConstraints({
-        advanced: [{ zoom: 1 }],
-      });
-    }
+    await track.applyConstraints({ advanced: [{ zoom: target }] });
   } catch {
-    /* sin control de zoom */
+    try {
+      await track.applyConstraints({ zoom: target });
+    } catch {
+      /* sin control de zoom */
+    }
   }
 }
 
@@ -140,7 +176,7 @@ export function BarcodeScanner({
         }
         const track = stream.getVideoTracks()[0];
         trackRef.current = track;
-        await applyHdAndZoom(track);
+        await applyHd(track);
         video.srcObject = stream;
         video.muted = true;
         video.playsInline = true;
@@ -149,6 +185,7 @@ export function BarcodeScanner({
         if (cancelled) return;
         await new Promise((r) => window.setTimeout(r, 200));
         if (cancelled) return;
+        await applyOneXZoom(track);
         await applyContinuousFocus(track);
         const caps = track.getCapabilities() as TrackCaps;
         setHasTorch(Boolean(caps.torch));
