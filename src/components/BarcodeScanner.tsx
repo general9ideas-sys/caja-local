@@ -17,11 +17,17 @@ type TrackCaps = MediaTrackCapabilities & {
   pointsOfInterest?: boolean;
 };
 
+type Lens = "0.5" | "1" | "3";
+
 const HD: MediaTrackConstraints = {
   width: { min: 1280, ideal: 1920 },
   height: { min: 720, ideal: 1080 },
   frameRate: { ideal: 30 },
 };
+
+function sleep(ms: number) {
+  return new Promise((r) => window.setTimeout(r, ms));
+}
 
 async function getCamera(video: MediaTrackConstraints): Promise<MediaStream> {
   try {
@@ -33,7 +39,7 @@ async function getCamera(video: MediaTrackConstraints): Promise<MediaStream> {
 }
 
 function isFrontCam(label: string) {
-  return /front|user|face|delantera/i.test(label);
+  return /front|user|face|delantera|frontal|frente|selfie/i.test(label);
 }
 
 function isUltraWide(label: string) {
@@ -48,46 +54,105 @@ function isOneX(label: string) {
   return /\b1\s*[.,]\s*0\b|\b1\s*x\b/i.test(label);
 }
 
-/** En Samsung, camera2 0 suele ser 0.5x; camera2 2 es la 1.0x. */
-function pickStandardRear(videos: MediaDeviceInfo[]): MediaDeviceInfo | undefined {
-  const back = videos.filter((d) => !isFrontCam(d.label));
-  if (!back.length) return undefined;
-
-  const namedOneX = back.find(
-    (d) => isOneX(d.label) && !isUltraWide(d.label) && !isTeleCam(d.label),
+function rearCameras(videos: MediaDeviceInfo[]) {
+  const inputs = videos.filter((d) => d.kind === "videoinput");
+  const labeledBack = inputs.filter((d) =>
+    /back|rear|environment|trasera/i.test(d.label),
   );
-  if (namedOneX) return namedOneX;
-
-  const usable = back.filter((d) => !isUltraWide(d.label) && !isTeleCam(d.label));
-  const samsungMain = usable.find((d) => /camera2\s*2\b/i.test(d.label));
-  if (samsungMain) return samsungMain;
-
-  const notUltraIndex = usable.filter((d) => !/camera2\s*0\b/i.test(d.label));
-  if (notUltraIndex.length) return notUltraIndex[0];
-  if (usable.length) return usable[0];
-
-  if (back.length >= 2) return back[1];
-  return back[0];
+  if (labeledBack.length) return labeledBack;
+  return inputs.filter((d) => !isFrontCam(d.label));
 }
 
-async function openRearStream(): Promise<MediaStream> {
-  let stream = await getCamera({
-    ...HD,
-    facingMode: { ideal: "environment" },
-  });
-  const devices = await navigator.mediaDevices.enumerateDevices();
-  const videos = devices.filter((d) => d.kind === "videoinput");
-  const main = pickStandardRear(videos);
-
-  const currentId = stream.getVideoTracks()[0]?.getSettings().deviceId;
-  if (main?.deviceId && main.deviceId !== currentId) {
-    stream.getTracks().forEach((track) => track.stop());
-    stream = await getCamera({
-      ...HD,
-      deviceId: { exact: main.deviceId },
-    });
+/**
+ * facingMode: environment en Samsung abre la 0.5x.
+ * La 1.0x es otra cámara trasera, no esa.
+ */
+function pickLensDevice(
+  rear: MediaDeviceInfo[],
+  uwDeviceId: string,
+  lens: Lens,
+): string | undefined {
+  if (!rear.length) return undefined;
+  if (lens === "0.5") {
+    return (
+      rear.find((d) => isUltraWide(d.label))?.deviceId ??
+      rear.find((d) => /camera2\s*0\b/i.test(d.label))?.deviceId ??
+      uwDeviceId ??
+      rear[0].deviceId
+    );
   }
-  return stream;
+  if (lens === "3") {
+    return (
+      rear.find((d) => isTeleCam(d.label))?.deviceId ??
+      rear.find((d) => /camera2\s*3\b/i.test(d.label))?.deviceId ??
+      (rear.length >= 3 ? rear[2].deviceId : undefined)
+    );
+  }
+
+  const named = rear.find(
+    (d) => isOneX(d.label) && !isUltraWide(d.label) && !isTeleCam(d.label),
+  );
+  if (named) return named.deviceId;
+
+  const samsungMain = rear.find((d) => /camera2\s*2\b/i.test(d.label));
+  if (samsungMain) return samsungMain.deviceId;
+
+  const notUw = rear.filter(
+    (d) =>
+      d.deviceId !== uwDeviceId &&
+      !isUltraWide(d.label) &&
+      !isTeleCam(d.label) &&
+      !/camera2\s*0\b/i.test(d.label),
+  );
+  if (notUw.length) return notUw[0].deviceId;
+
+  const anyOther = rear.find((d) => d.deviceId !== uwDeviceId && !isTeleCam(d.label));
+  if (anyOther) return anyOther.deviceId;
+
+  return rear.length >= 2 ? rear[1].deviceId : rear[0].deviceId;
+}
+
+async function setZoom(track: MediaStreamTrack, value: number) {
+  try {
+    await track.applyConstraints({ advanced: [{ zoom: value }] });
+    return;
+  } catch {
+    /* probar sin advanced */
+  }
+  try {
+    await track.applyConstraints({ zoom: value });
+  } catch {
+    /* sin zoom */
+  }
+}
+
+/** En Samsung, zoom 1 suele ser la 0.5x; zoom 2 es la 1.0x. */
+function zoomForLens(caps: TrackCaps, lens: Lens, onUwDefault: boolean): number | null {
+  if (!caps.zoom) return null;
+  const { min, max } = caps.zoom;
+  if (lens === "0.5") return min;
+  if (lens === "3") {
+    if (min < 1 && max >= 3) return Math.min(max, 3);
+    if (max >= 6) return 6;
+    return max;
+  }
+  if (min < 1 && max >= 1) return 1;
+  if (onUwDefault && max >= 2) return 2;
+  if (min <= 1 && max >= 1) return 1;
+  return Math.min(max, min * 2);
+}
+
+async function applyLensZoom(track: MediaStreamTrack, lens: Lens, onUwDefault: boolean) {
+  const caps = track.getCapabilities() as TrackCaps;
+  const target = zoomForLens(caps, lens, onUwDefault);
+  if (target == null) return;
+  await setZoom(track, target);
+  await sleep(120);
+  await setZoom(track, target);
+  const after = (track.getSettings() as MediaTrackSettings & { zoom?: number }).zoom;
+  if (lens === "1" && onUwDefault && caps.zoom && (after == null || after <= 1) && caps.zoom.max >= 2) {
+    await setZoom(track, 2);
+  }
 }
 
 async function applyHd(track: MediaStreamTrack) {
@@ -104,21 +169,6 @@ async function applyHd(track: MediaStreamTrack) {
   }
 }
 
-async function applyOneXZoom(track: MediaStreamTrack) {
-  const caps = track.getCapabilities() as TrackCaps;
-  if (!caps.zoom) return;
-  const target = caps.zoom.min <= 1 && caps.zoom.max >= 1 ? 1 : caps.zoom.min;
-  try {
-    await track.applyConstraints({ advanced: [{ zoom: target }] });
-  } catch {
-    try {
-      await track.applyConstraints({ zoom: target });
-    } catch {
-      /* sin control de zoom */
-    }
-  }
-}
-
 async function applyContinuousFocus(track: MediaStreamTrack) {
   const caps = track.getCapabilities() as TrackCaps;
   try {
@@ -130,6 +180,31 @@ async function applyContinuousFocus(track: MediaStreamTrack) {
   } catch {
     /* el autofoco lo maneja el sistema */
   }
+}
+
+async function openLensStream(lens: Lens): Promise<{
+  stream: MediaStream;
+  onUwDefault: boolean;
+  rear: MediaDeviceInfo[];
+  uwDeviceId: string;
+}> {
+  const probe = await getCamera({ facingMode: { ideal: "environment" } });
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  const rear = rearCameras(devices);
+  const uwDeviceId = probe.getVideoTracks()[0]?.getSettings().deviceId ?? "";
+  const wantedId = pickLensDevice(rear, uwDeviceId, lens);
+
+  if (wantedId && wantedId !== uwDeviceId) {
+    probe.getTracks().forEach((track) => track.stop());
+    await sleep(400);
+    const stream = await getCamera({
+      ...HD,
+      deviceId: { exact: wantedId },
+    });
+    return { stream, onUwDefault: false, rear, uwDeviceId };
+  }
+
+  return { stream: probe, onUwDefault: true, rear, uwDeviceId };
 }
 
 export function BarcodeScanner({
@@ -144,6 +219,10 @@ export function BarcodeScanner({
   const errorId = useId();
   const videoRef = useRef<HTMLVideoElement>(null);
   const trackRef = useRef<MediaStreamTrack | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const rearRef = useRef<MediaDeviceInfo[]>([]);
+  const uwDeviceIdRef = useRef("");
+  const onUwDefaultRef = useRef(true);
   const onDetectedRef = useRef(onDetected);
   onDetectedRef.current = onDetected;
   const handledRef = useRef(false);
@@ -153,6 +232,8 @@ export function BarcodeScanner({
   const [torchOn, setTorchOn] = useState(false);
   const [hasTorch, setHasTorch] = useState(false);
   const [focusHint, setFocusHint] = useState<{ x: number; y: number } | null>(null);
+  const [lens, setLens] = useState<Lens>("1");
+  const [showLenses, setShowLenses] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -161,34 +242,46 @@ export function BarcodeScanner({
     setManual("");
     setTorchOn(false);
     setHasTorch(false);
+    setLens("1");
+    setShowLenses(false);
     let cancelled = false;
     let timer = 0;
-    let stream: MediaStream | null = null;
+
+    async function attach(stream: MediaStream, onUwDefault: boolean, activeLens: Lens) {
+      const video = videoRef.current;
+      if (!video) return;
+      const track = stream.getVideoTracks()[0];
+      trackRef.current = track;
+      streamRef.current = stream;
+      await applyHd(track);
+      video.srcObject = stream;
+      video.muted = true;
+      video.playsInline = true;
+      video.setAttribute("playsinline", "true");
+      await video.play();
+      if (cancelled) return;
+      await sleep(200);
+      if (cancelled) return;
+      await applyLensZoom(track, activeLens, onUwDefault);
+      await applyContinuousFocus(track);
+      const caps = track.getCapabilities() as TrackCaps;
+      setHasTorch(Boolean(caps.torch));
+      setShowLenses(rearRef.current.length > 1 || Boolean(caps.zoom && caps.zoom.max > caps.zoom.min));
+    }
 
     async function start() {
       const video = videoRef.current;
       if (!video) return;
       try {
-        stream = await openRearStream();
+        const opened = await openLensStream("1");
         if (cancelled) {
-          stream.getTracks().forEach((t) => t.stop());
+          opened.stream.getTracks().forEach((t) => t.stop());
           return;
         }
-        const track = stream.getVideoTracks()[0];
-        trackRef.current = track;
-        await applyHd(track);
-        video.srcObject = stream;
-        video.muted = true;
-        video.playsInline = true;
-        video.setAttribute("playsinline", "true");
-        await video.play();
-        if (cancelled) return;
-        await new Promise((r) => window.setTimeout(r, 200));
-        if (cancelled) return;
-        await applyOneXZoom(track);
-        await applyContinuousFocus(track);
-        const caps = track.getCapabilities() as TrackCaps;
-        setHasTorch(Boolean(caps.torch));
+        rearRef.current = opened.rear;
+        uwDeviceIdRef.current = opened.uwDeviceId;
+        onUwDefaultRef.current = opened.onUwDefault;
+        await attach(opened.stream, opened.onUwDefault, "1");
 
         const Detector = window.BarcodeDetector;
         let detector: BarcodeDetector | null = null;
@@ -252,9 +345,44 @@ export function BarcodeScanner({
       trackRef.current = null;
       const video = videoRef.current;
       if (video) video.srcObject = null;
-      stream?.getTracks().forEach((t) => t.stop());
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
     };
   }, [open]);
+
+  async function switchLens(next: Lens) {
+    setLens(next);
+    const video = videoRef.current;
+    if (!video) return;
+    const wantedId = pickLensDevice(rearRef.current, uwDeviceIdRef.current, next);
+    const currentId = trackRef.current?.getSettings().deviceId;
+    const stay = !wantedId || wantedId === currentId;
+
+    if (stay) {
+      const track = trackRef.current;
+      if (track) await applyLensZoom(track, next, onUwDefaultRef.current || wantedId === uwDeviceIdRef.current);
+      return;
+    }
+
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    await sleep(400);
+    const stream = await getCamera({
+      ...HD,
+      deviceId: { exact: wantedId },
+    });
+    const onUw = wantedId === uwDeviceIdRef.current;
+    onUwDefaultRef.current = onUw;
+    await applyHd(stream.getVideoTracks()[0]);
+    trackRef.current = stream.getVideoTracks()[0];
+    streamRef.current = stream;
+    video.srcObject = stream;
+    await video.play();
+    await sleep(200);
+    await applyLensZoom(trackRef.current, next, onUw);
+    await applyContinuousFocus(trackRef.current);
+    const caps = trackRef.current.getCapabilities() as TrackCaps;
+    setHasTorch(Boolean(caps.torch));
+  }
 
   async function toggleTorch() {
     const track = trackRef.current;
@@ -273,7 +401,10 @@ export function BarcodeScanner({
     const track = trackRef.current;
     if (!video || !track) return;
     const rect = video.getBoundingClientRect();
-    setFocusHint({ x: clientX - host.getBoundingClientRect().left, y: clientY - host.getBoundingClientRect().top });
+    setFocusHint({
+      x: clientX - host.getBoundingClientRect().left,
+      y: clientY - host.getBoundingClientRect().top,
+    });
     window.setTimeout(() => setFocusHint(null), 600);
     const caps = track.getCapabilities() as TrackCaps;
     const x = (clientX - rect.left) / rect.width;
@@ -348,6 +479,26 @@ export function BarcodeScanner({
             ) : null}
           </div>
         </div>
+
+        {showLenses ? (
+          <div className="pointer-events-auto absolute inset-x-0 bottom-3 flex justify-center">
+            <div className="flex items-center gap-2 rounded-full bg-black/55 px-2 py-1.5" role="group" aria-label="Lente de la cámara">
+              {(["0.5", "1", "3"] as Lens[]).map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => void switchLens(value)}
+                  aria-pressed={lens === value}
+                  className={`focus-ring min-h-10 min-w-12 rounded-full px-3 text-sm font-bold ${
+                    lens === value ? "bg-white text-ink" : "text-white"
+                  }`}
+                >
+                  {value}x
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </div>
 
       <div className="bg-ink px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3">
