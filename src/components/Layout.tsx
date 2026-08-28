@@ -42,7 +42,7 @@ export function Layout({
   const cashToday = sumByMethod(sales, "efectivo");
 
   return (
-    <div className="flex min-h-dvh bg-background">
+    <div className="flex h-dvh bg-background">
       <aside className="hidden w-[220px] shrink-0 flex-col border-r border-border bg-card lg:flex">
         <div className="px-5 py-6">
           <p className="font-display text-lg font-bold tracking-tight text-foreground">
@@ -85,11 +85,11 @@ export function Layout({
         </div>
       </aside>
 
-      <div className="flex min-w-0 flex-1 flex-col pb-[72px] lg:pb-0">
-        <header className="flex items-center justify-between gap-3 border-b border-border bg-card px-4 py-3 lg:px-6">
+      <div className="flex min-h-0 flex-1 flex-col pb-[calc(5rem+env(safe-area-inset-bottom,0px))] lg:pb-0">
+        <header className="flex shrink-0 items-center justify-between gap-3 border-b border-border bg-card px-4 py-3 lg:px-6">
           <div className="min-w-0 lg:hidden">
-            <p className="truncate font-display text-base font-bold">{state.settings.storeName}</p>
-            <p className="text-sm text-muted-foreground">
+            <p className="truncate font-display text-lg font-bold">{state.settings.storeName}</p>
+            <p className="text-base text-muted-foreground">
               {sales.length} {sales.length === 1 ? "venta" : "ventas"} · {money(todayTotal)}
             </p>
           </div>
@@ -97,7 +97,7 @@ export function Layout({
             {NAV.find((n) => n.id === page)?.label}
           </p>
           <div className="ml-auto text-right">
-            <p className="font-display text-lg font-semibold tabular">
+            <p className="font-display text-xl font-semibold tabular">
               {now.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })}
             </p>
             <p className="text-sm capitalize text-muted-foreground">
@@ -109,11 +109,11 @@ export function Layout({
             </p>
           </div>
         </header>
-        <main className="min-h-0 flex-1">{children}</main>
+        <main className="min-h-0 flex-1 overflow-hidden">{children}</main>
       </div>
 
       <nav
-        className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-4 border-t border-border bg-card lg:hidden"
+        className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-4 border-t border-border bg-card pb-[env(safe-area-inset-bottom,0px)] lg:hidden"
         aria-label="Principal"
       >
         {NAV.map((item) => {
@@ -125,11 +125,11 @@ export function Layout({
               type="button"
               onClick={() => onPage(item.id)}
               aria-current={active ? "page" : undefined}
-              className={`focus-ring flex min-h-[72px] flex-col items-center justify-center gap-1 text-xs font-bold ${
+              className={`focus-ring flex min-h-20 flex-col items-center justify-center gap-1 text-sm font-bold ${
                 active ? "text-primary" : "text-muted-foreground"
               }`}
             >
-              <Icon size={24} weight={active ? "fill" : "regular"} aria-hidden="true" />
+              <Icon size={28} weight={active ? "fill" : "regular"} aria-hidden="true" />
               {item.label}
             </button>
           );

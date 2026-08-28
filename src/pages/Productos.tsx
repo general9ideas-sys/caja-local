@@ -52,14 +52,14 @@ export function ProductosPage() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Buscar nombre, código o rubro"
-            className="focus-ring w-full rounded-2xl border border-border bg-card py-3 pl-11 pr-4"
+            className="focus-ring min-h-14 w-full rounded-2xl border border-border bg-card py-3 pl-12 pr-4 text-lg"
           />
         </label>
         <div className="flex gap-2">
           <button
             type="button"
             onClick={() => setScanOpen(true)}
-            className="focus-ring inline-flex min-h-12 flex-1 items-center justify-center gap-2 rounded-2xl bg-muted px-4 font-bold sm:flex-none"
+            className="focus-ring inline-flex min-h-14 flex-1 items-center justify-center gap-2 rounded-2xl bg-muted px-4 text-base font-bold sm:flex-none"
           >
             <Barcode size={20} aria-hidden="true" />
             Escanear
@@ -70,7 +70,7 @@ export function ProductosPage() {
               setInitialSku("");
               setEditing("new");
             }}
-            className="focus-ring inline-flex min-h-12 flex-1 items-center justify-center gap-2 rounded-2xl bg-primary px-5 font-display font-bold text-on-primary hover:bg-primary-dark sm:flex-none"
+            className="focus-ring inline-flex min-h-14 flex-1 items-center justify-center gap-2 rounded-2xl bg-primary px-5 font-display text-base font-bold text-on-primary hover:bg-primary-dark sm:flex-none"
           >
             <Plus size={20} aria-hidden="true" />
             Nuevo
@@ -80,22 +80,22 @@ export function ProductosPage() {
 
       <ul className="mt-4 divide-y divide-border overflow-hidden rounded-3xl bg-card">
         {filtered.map((product) => (
-          <li key={product.id} className="flex items-center gap-3 px-4 py-3">
+          <li key={product.id} className="flex items-center gap-3 px-4 py-4">
             <div className="min-w-0 flex-1">
-              <p className="truncate font-display font-semibold">{product.name}</p>
-              <p className="text-sm text-muted-foreground">
+              <p className="truncate font-display text-lg font-semibold">{product.name}</p>
+              <p className="text-base text-muted-foreground">
                 {product.category}
                 {product.sku ? ` · ${product.sku}` : ""} · Stock {product.stock}
               </p>
             </div>
-            <p className="font-display font-bold tabular">{money(product.priceCents)}</p>
+            <p className="font-display text-lg font-bold tabular">{money(product.priceCents)}</p>
             <button
               type="button"
               onClick={() => {
                 setInitialSku("");
                 setEditing(product);
               }}
-              className="focus-ring inline-flex size-11 items-center justify-center rounded-xl hover:bg-muted"
+              className="focus-ring inline-flex size-12 items-center justify-center rounded-xl hover:bg-muted"
               aria-label={`Editar ${product.name}`}
             >
               <PencilSimple size={20} aria-hidden="true" />
@@ -103,7 +103,7 @@ export function ProductosPage() {
             <button
               type="button"
               onClick={() => removeProduct(product.id)}
-              className="focus-ring inline-flex size-11 items-center justify-center rounded-xl text-destructive hover:bg-red-50"
+              className="focus-ring inline-flex size-12 items-center justify-center rounded-xl text-destructive hover:bg-red-50"
               aria-label={`Quitar ${product.name}`}
             >
               <Trash size={20} aria-hidden="true" />
@@ -134,7 +134,7 @@ export function ProductosPage() {
       <BarcodeScanner
         open={scanOpen}
         title="Escanear para registrar"
-        hint="Si el código ya existe, se abre el producto. Si no, se crea uno nuevo."
+        hint="Acercá el código a la franja. Tocá la pantalla para enfocar."
         onClose={() => setScanOpen(false)}
         onDetected={onScanned}
       />

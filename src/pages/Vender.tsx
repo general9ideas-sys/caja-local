@@ -151,21 +151,21 @@ export function VenderPage() {
   }
 
   return (
-    <div className="flex h-[calc(100dvh-57px-72px)] lg:h-[calc(100dvh-65px)]">
+    <div className="flex h-full min-h-0">
       <section className="flex min-w-0 flex-1 flex-col">
         <div className="border-b border-border bg-card px-4 py-3 lg:px-6">
           <div className="flex gap-2">
             <label className="relative block min-w-0 flex-1">
               <span className="sr-only">Buscar producto</span>
               <MagnifyingGlass
-                size={20}
+                size={22}
                 className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
                 aria-hidden="true"
               />
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Buscar o escanear código"
+                placeholder="Buscar o código"
                 data-barcode-target="true"
                 autoComplete="off"
                 onKeyDown={(e) => {
@@ -174,21 +174,19 @@ export function VenderPage() {
                     applyBarcode(query, false);
                   }
                 }}
-                className="focus-ring w-full rounded-2xl border border-border bg-background py-3 pl-11 pr-14 text-base"
+                className="focus-ring min-h-14 w-full rounded-2xl border border-border bg-background py-3 pl-12 pr-4 text-lg"
               />
-              <button
-                type="button"
-                onClick={() => setScanOpen(true)}
-                className="focus-ring absolute right-1.5 top-1/2 inline-flex size-10 -translate-y-1/2 items-center justify-center rounded-xl hover:bg-muted"
-                aria-label="Escanear código de barras con la cámara"
-              >
-                <Barcode size={22} aria-hidden="true" />
-              </button>
             </label>
+            <button
+              type="button"
+              onClick={() => setScanOpen(true)}
+              className="focus-ring inline-flex min-h-14 shrink-0 items-center gap-2 rounded-2xl bg-primary px-4 font-display text-base font-bold text-on-primary hover:bg-primary-dark"
+              aria-label="Escanear código de barras con la cámara"
+            >
+              <Barcode size={28} aria-hidden="true" />
+              <span className="hidden min-[380px]:inline">Escanear</span>
+            </button>
           </div>
-          <p className="mt-2 text-xs text-muted-foreground">
-            Cámara del celular o lectora USB. Enter también busca el código.
-          </p>
           <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
             {categories.map((cat) => {
               const pressed = category === cat;
@@ -198,7 +196,7 @@ export function VenderPage() {
                   type="button"
                   aria-pressed={pressed}
                   onClick={() => setCategory(cat)}
-                  className={`focus-ring shrink-0 rounded-full px-4 py-2 text-sm font-bold transition-colors duration-200 ${
+                  className={`focus-ring shrink-0 rounded-full px-4 py-2.5 text-base font-bold transition-colors duration-200 ${
                     pressed
                       ? "bg-primary text-on-primary"
                       : "bg-muted text-foreground hover:bg-border"
@@ -211,7 +209,7 @@ export function VenderPage() {
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto p-4 pb-28 lg:p-6 lg:pb-6">
+        <div className="min-h-0 flex-1 overflow-y-auto p-4 pb-36 lg:p-6 lg:pb-6">
           {filtered.length === 0 ? (
             <p className="rounded-2xl bg-card p-8 text-center text-muted-foreground">
               No hay productos con ese filtro. Agregalos en la pestaña Productos.
@@ -223,21 +221,21 @@ export function VenderPage() {
                   <button
                     type="button"
                     onClick={() => addProduct(product)}
-                    className="focus-ring flex min-h-[132px] w-full flex-col items-start rounded-2xl border border-transparent bg-card p-4 text-left shadow-[0_1px_2px_rgba(0,0,0,0.05)] transition-colors duration-200 hover:border-primary"
+                    className="focus-ring flex min-h-[11.5rem] w-full flex-col items-start rounded-2xl border border-transparent bg-card p-4 text-left shadow-[0_1px_2px_rgba(0,0,0,0.05)] transition-colors duration-200 hover:border-primary"
                   >
                     <span
-                      className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${categoryClass(product.category)}`}
+                      className={`rounded-full px-2.5 py-1 text-xs font-bold ${categoryClass(product.category)}`}
                     >
                       {product.category}
                     </span>
-                    <span className="mt-2 line-clamp-2 font-display text-base font-semibold leading-snug">
+                    <span className="mt-2 line-clamp-2 font-display text-lg font-semibold leading-snug">
                       {product.name}
                     </span>
-                    <span className="mt-auto pt-3 font-display text-lg font-bold tabular text-primary">
+                    <span className="mt-auto pt-3 font-display text-2xl font-bold tabular text-primary">
                       {money(product.priceCents)}
                     </span>
                     <span
-                      className={`text-xs font-semibold ${
+                      className={`text-sm font-semibold ${
                         product.stock <= 0
                           ? "text-destructive"
                           : product.stock <= 5
@@ -264,18 +262,18 @@ export function VenderPage() {
         />
       </aside>
 
-      <div className="fixed inset-x-0 bottom-[72px] z-30 border-t border-border bg-card p-3 lg:hidden">
+      <div className="fixed inset-x-0 bottom-[calc(5rem+env(safe-area-inset-bottom,0px))] z-30 border-t border-border bg-card p-3 lg:hidden">
         <button
           type="button"
           disabled={!lines.length}
           onClick={() => setTicketOpen(true)}
-          className="focus-ring flex min-h-14 w-full items-center justify-between rounded-2xl bg-foreground px-4 text-on-primary disabled:bg-muted disabled:text-muted-foreground"
+          className="focus-ring flex min-h-16 w-full items-center justify-between rounded-2xl bg-foreground px-4 text-on-primary disabled:bg-muted disabled:text-muted-foreground"
         >
-          <span className="font-semibold">
+          <span className="text-base font-semibold">
             {count} {count === 1 ? "ítem" : "ítems"}
           </span>
-          <span className="font-display text-lg font-bold tabular">{money(total)}</span>
-          <span className="rounded-xl bg-accent px-3 py-2 text-sm font-bold text-on-accent">
+          <span className="font-display text-2xl font-bold tabular">{money(total)}</span>
+          <span className="rounded-xl bg-accent px-4 py-2.5 text-base font-bold text-on-accent">
             Cobrar
           </span>
         </button>
@@ -312,7 +310,7 @@ export function VenderPage() {
       <BarcodeScanner
         open={scanOpen}
         title="Escanear para cobrar"
-        hint="Apuntá al código. Si usás una lectora USB, no hace falta la cámara: escaneá con el ticket abierto."
+        hint="Acercá el código a la franja central. Tocá la imagen para enfocar. La linterna ayuda si hay poca luz."
         onClose={() => setScanOpen(false)}
         onDetected={applyBarcode}
       />
