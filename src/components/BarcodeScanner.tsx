@@ -1,5 +1,5 @@
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from "html5-qrcode";
-import { Lightning, MagnifyingGlass, X } from "@phosphor-icons/react";
+import { Lightning, X } from "@phosphor-icons/react";
 import { useEffect, useId, useRef, useState } from "react";
 import { normalizeBarcode } from "../lib/barcode";
 
@@ -11,7 +11,23 @@ interface BarcodeScannerProps {
   onDetected: (code: string) => void;
 }
 
-type ZoomRange = { min: number; max: number; step: number };
+async function pickRearCamera(): Promise<string | MediaTrackConstraints> {
+  try {
+    const cameras = await Html5Qrcode.getCameras();
+    const back = cameras.filter((c) => /back|rear|environment/i.test(c.label));
+    const pool = back.length
+      ? back
+      : cameras.filter((c) => !/front|user|face/i.test(c.label));
+    const main =
+      pool.find((c) => /camera2\s*0/i.test(c.label)) ??
+      pool.find((c) => !/ultra|wide|uw|macro|tele/i.test(c.label)) ??
+      pool[0];
+    if (main?.id) return main.id;
+  } catch {
+    /* el permiso todavía no está */
+  }
+  return { facingMode: "environment" };
+}
 
 export function BarcodeScanner({
   open,
@@ -30,8 +46,6 @@ export function BarcodeScanner({
   const [manual, setManual] = useState("");
   const [torchOn, setTorchOn] = useState(false);
   const [hasTorch, setHasTorch] = useState(false);
-  const [zoom, setZoom] = useState<ZoomRange | null>(null);
-  const [zoomValue, setZoomValue] = useState(1);
   const [focusHint, setFocusHint] = useState<{ x: number; y: number } | null>(null);
   const errorId = useId();
 
@@ -42,7 +56,6 @@ export function BarcodeScanner({
     setManual("");
     setTorchOn(false);
     setHasTorch(false);
-    setZoom(null);
     let cancelled = false;
 
     const timer = window.setTimeout(async () => {
@@ -64,20 +77,16 @@ export function BarcodeScanner({
       });
       scannerRef.current = scanner;
       try {
+        const camera = await pickRearCamera();
         await scanner.start(
-          { facingMode: "environment" },
+          camera,
           {
-            fps: 15,
+            fps: 10,
             disableFlip: true,
             qrbox: (viewfinderWidth, viewfinderHeight) => ({
-              width: Math.floor(viewfinderWidth * 0.92),
-              height: Math.floor(Math.min(viewfinderHeight * 0.3, 280)),
+              width: Math.floor(viewfinderWidth * 0.86),
+              height: Math.floor(Math.min(viewfinderHeight * 0.22, 200)),
             }),
-            videoConstraints: {
-              facingMode: { ideal: "environment" },
-              width: { min: 1280, ideal: 1920 },
-              height: { min: 720, ideal: 1080 },
-            },
           },
           (text) => {
             if (handledRef.current) return;
@@ -89,30 +98,17 @@ export function BarcodeScanner({
         if (cancelled) return;
 
         try {
-          await scanner.applyVideoConstraints({
-            advanced: [{ focusMode: "continuous" } as unknown as MediaTrackConstraintSet],
-          });
-        } catch {
-          /* algunos celulares no exponen focusMode */
-        }
-
-        try {
           const features = scanner.getRunningTrackCameraCapabilities();
           setHasTorch(features.torchFeature().isSupported());
           const zoomFeature = features.zoomFeature();
           if (zoomFeature.isSupported()) {
-            const range = {
-              min: zoomFeature.min(),
-              max: zoomFeature.max(),
-              step: zoomFeature.step() || 0.1,
-            };
-            setZoom(range);
-            const start = Math.min(range.max, Math.max(range.min, range.min + (range.max - range.min) * 0.25));
-            setZoomValue(start);
-            await zoomFeature.apply(start);
+            const min = zoomFeature.min();
+            const max = zoomFeature.max();
+            const standard = min <= 1 && 1 <= max ? 1 : min;
+            await zoomFeature.apply(standard);
           }
         } catch {
-          /* sin zoom/linterna */
+          /* sin linterna */
         }
       } catch (err) {
         if (cancelled) return;
@@ -159,19 +155,10 @@ export function BarcodeScanner({
     }
   }
 
-  async function changeZoom(value: number) {
-    const scanner = scannerRef.current;
-    if (!scanner || !zoom) return;
-    setZoomValue(value);
-    try {
-      await scanner.getRunningTrackCameraCapabilities().zoomFeature().apply(value);
-    } catch {
-      /* ignore */
-    }
-  }
-
   async function focusAt(clientX: number, clientY: number, target: HTMLElement) {
-    const video = target.querySelector("video") ?? target.closest(".barcode-stage")?.querySelector("video");
+    const video =
+      target.querySelector("video") ??
+      target.closest(".barcode-stage")?.querySelector("video");
     if (!video) return;
     const rect = video.getBoundingClientRect();
     const x = (clientX - rect.left) / rect.width;
@@ -188,12 +175,13 @@ export function BarcodeScanner({
       pointsOfInterest?: boolean;
     };
     const advanced: Array<Record<string, unknown>> = [];
-    if (caps.focusMode?.includes("single-shot")) advanced.push({ focusMode: "single-shot" });
-    else if (caps.focusMode?.includes("continuous")) advanced.push({ focusMode: "continuous" });
+    if (caps.focusMode?.includes("continuous")) advanced.push({ focusMode: "continuous" });
     if (caps.pointsOfInterest) advanced.push({ pointsOfInterest: [{ x, y }] });
     if (!advanced.length) return;
     try {
-      await track.applyConstraints({ advanced: advanced as unknown as MediaTrackConstraintSet[] });
+      await track.applyConstraints({
+        advanced: advanced as unknown as MediaTrackConstraintSet[],
+      });
     } catch {
       /* el celular no soporta tap-to-focus */
     }
@@ -248,28 +236,12 @@ export function BarcodeScanner({
           </div>
         </div>
 
-        <p className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-[7.5rem] px-6 text-center text-sm font-semibold text-white drop-shadow">
-          Acercá el código a la franja y tocá la pantalla para enfocar
+        <p className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-[6.5rem] px-6 text-center text-sm font-semibold text-white drop-shadow">
+          Poné el código en el centro, sin acercar demasiado el celular
         </p>
       </div>
 
       <div className="bg-ink px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3">
-        {zoom ? (
-          <label className="mb-3 flex items-center gap-3">
-            <MagnifyingGlass size={22} aria-hidden="true" />
-            <span className="sr-only">Zoom de la cámara</span>
-            <input
-              type="range"
-              min={zoom.min}
-              max={zoom.max}
-              step={zoom.step}
-              value={zoomValue}
-              onChange={(e) => void changeZoom(Number(e.target.value))}
-              className="h-8 w-full accent-primary"
-            />
-          </label>
-        ) : null}
-
         {error ? (
           <div
             id={errorId}

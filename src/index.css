@@ -114,11 +114,16 @@ button:disabled,
   background: #0f172a;
 }
 
-.barcode-stage video,
-.barcode-stage canvas {
+.barcode-stage video {
   width: 100% !important;
   height: 100% !important;
-  object-fit: cover !important;
+  object-fit: contain !important;
+  background: #0f172a;
+}
+
+.barcode-stage canvas {
+  opacity: 0 !important;
+  pointer-events: none !important;
 }
 
 .barcode-stage img {
