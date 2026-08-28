@@ -44,24 +44,24 @@ export function ProductosPage() {
         <label className="relative block min-w-0 flex-1">
           <span className="sr-only">Buscar productos</span>
           <MagnifyingGlass
-            size={20}
-            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+            size={26}
+            className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground"
             aria-hidden="true"
           />
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Buscar nombre, código o rubro"
-            className="focus-ring min-h-14 w-full rounded-2xl border border-border bg-card py-3 pl-12 pr-4 text-lg"
+            className="focus-ring min-h-16 w-full rounded-2xl border border-border bg-card py-3 pl-14 pr-4 text-xl"
           />
         </label>
         <div className="flex gap-2">
           <button
             type="button"
             onClick={() => setScanOpen(true)}
-            className="focus-ring inline-flex min-h-14 flex-1 items-center justify-center gap-2 rounded-2xl bg-muted px-4 text-base font-bold sm:flex-none"
+            className="focus-ring inline-flex min-h-16 flex-1 items-center justify-center gap-2 rounded-2xl bg-muted px-4 text-lg font-bold sm:flex-none"
           >
-            <Barcode size={20} aria-hidden="true" />
+            <Barcode size={28} aria-hidden="true" />
             Escanear
           </button>
           <button
@@ -70,9 +70,9 @@ export function ProductosPage() {
               setInitialSku("");
               setEditing("new");
             }}
-            className="focus-ring inline-flex min-h-14 flex-1 items-center justify-center gap-2 rounded-2xl bg-primary px-5 font-display text-base font-bold text-on-primary hover:bg-primary-dark sm:flex-none"
+            className="focus-ring inline-flex min-h-16 flex-1 items-center justify-center gap-2 rounded-2xl bg-primary px-5 font-display text-lg font-bold text-on-primary hover:bg-primary-dark sm:flex-none"
           >
-            <Plus size={20} aria-hidden="true" />
+            <Plus size={28} aria-hidden="true" />
             Nuevo
           </button>
         </div>
@@ -80,33 +80,33 @@ export function ProductosPage() {
 
       <ul className="mt-4 divide-y divide-border overflow-hidden rounded-3xl bg-card">
         {filtered.map((product) => (
-          <li key={product.id} className="flex items-center gap-3 px-4 py-4">
+          <li key={product.id} className="flex items-center gap-3 px-4 py-5">
             <div className="min-w-0 flex-1">
-              <p className="truncate font-display text-lg font-semibold">{product.name}</p>
-              <p className="text-base text-muted-foreground">
+              <p className="truncate font-display text-xl font-semibold">{product.name}</p>
+              <p className="text-lg text-muted-foreground">
                 {product.category}
                 {product.sku ? ` · ${product.sku}` : ""} · Stock {product.stock}
               </p>
             </div>
-            <p className="font-display text-lg font-bold tabular">{money(product.priceCents)}</p>
+            <p className="font-display text-xl font-bold tabular">{money(product.priceCents)}</p>
             <button
               type="button"
               onClick={() => {
                 setInitialSku("");
                 setEditing(product);
               }}
-              className="focus-ring inline-flex size-12 items-center justify-center rounded-xl hover:bg-muted"
+              className="focus-ring inline-flex size-14 items-center justify-center rounded-xl hover:bg-muted"
               aria-label={`Editar ${product.name}`}
             >
-              <PencilSimple size={20} aria-hidden="true" />
+              <PencilSimple size={26} aria-hidden="true" />
             </button>
             <button
               type="button"
               onClick={() => removeProduct(product.id)}
-              className="focus-ring inline-flex size-12 items-center justify-center rounded-xl text-destructive hover:bg-red-50"
+              className="focus-ring inline-flex size-14 items-center justify-center rounded-xl text-destructive hover:bg-red-50"
               aria-label={`Quitar ${product.name}`}
             >
-              <Trash size={20} aria-hidden="true" />
+              <Trash size={26} aria-hidden="true" />
             </button>
           </li>
         ))}

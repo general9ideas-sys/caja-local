@@ -36,7 +36,7 @@ export function VentasPage() {
               type="button"
               aria-pressed={pressed}
               onClick={() => setScope(id)}
-              className={`focus-ring min-h-11 rounded-full px-4 text-sm font-bold ${
+              className={`focus-ring min-h-12 rounded-full px-5 text-base font-bold ${
                 pressed ? "bg-primary text-on-primary" : "bg-card hover:bg-muted"
               }`}
             >
@@ -80,9 +80,9 @@ export function VentasPage() {
                     {money(sale.totalCents)}
                   </p>
                   {expanded ? (
-                    <CaretUp size={18} aria-hidden="true" />
+                    <CaretUp size={24} aria-hidden="true" />
                   ) : (
-                    <CaretDown size={18} aria-hidden="true" />
+                    <CaretDown size={24} aria-hidden="true" />
                   )}
                 </button>
                 {expanded ? (

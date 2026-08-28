@@ -158,8 +158,8 @@ export function VenderPage() {
             <label className="relative block min-w-0 flex-1">
               <span className="sr-only">Buscar producto</span>
               <MagnifyingGlass
-                size={22}
-                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+                size={26}
+                className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground"
                 aria-hidden="true"
               />
               <input
@@ -174,17 +174,17 @@ export function VenderPage() {
                     applyBarcode(query, false);
                   }
                 }}
-                className="focus-ring min-h-14 w-full rounded-2xl border border-border bg-background py-3 pl-12 pr-4 text-lg"
+                className="focus-ring min-h-16 w-full rounded-2xl border border-border bg-background py-3 pl-14 pr-4 text-xl"
               />
             </label>
             <button
               type="button"
               onClick={() => setScanOpen(true)}
-              className="focus-ring inline-flex min-h-14 shrink-0 items-center gap-2 rounded-2xl bg-primary px-4 font-display text-base font-bold text-on-primary hover:bg-primary-dark"
+              className="focus-ring inline-flex min-h-16 shrink-0 items-center gap-2 rounded-2xl bg-primary px-5 font-display text-lg font-bold text-on-primary hover:bg-primary-dark"
               aria-label="Escanear código de barras con la cámara"
             >
-              <Barcode size={28} aria-hidden="true" />
-              <span className="hidden min-[380px]:inline">Escanear</span>
+              <Barcode size={32} aria-hidden="true" />
+              <span>Escanear</span>
             </button>
           </div>
           <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
@@ -196,7 +196,7 @@ export function VenderPage() {
                   type="button"
                   aria-pressed={pressed}
                   onClick={() => setCategory(cat)}
-                  className={`focus-ring shrink-0 rounded-full px-4 py-2.5 text-base font-bold transition-colors duration-200 ${
+                  className={`focus-ring shrink-0 rounded-full px-5 py-3 text-lg font-bold transition-colors duration-200 ${
                     pressed
                       ? "bg-primary text-on-primary"
                       : "bg-muted text-foreground hover:bg-border"
@@ -221,14 +221,14 @@ export function VenderPage() {
                   <button
                     type="button"
                     onClick={() => addProduct(product)}
-                    className="focus-ring flex min-h-[11.5rem] w-full flex-col items-start rounded-2xl border border-transparent bg-card p-4 text-left shadow-[0_1px_2px_rgba(0,0,0,0.05)] transition-colors duration-200 hover:border-primary"
+                    className="focus-ring flex min-h-[13rem] w-full flex-col items-start rounded-2xl border border-transparent bg-card p-4 text-left shadow-[0_1px_2px_rgba(0,0,0,0.05)] transition-colors duration-200 hover:border-primary"
                   >
                     <span
-                      className={`rounded-full px-2.5 py-1 text-xs font-bold ${categoryClass(product.category)}`}
+                      className={`rounded-full px-2.5 py-1 text-sm font-bold ${categoryClass(product.category)}`}
                     >
                       {product.category}
                     </span>
-                    <span className="mt-2 line-clamp-2 font-display text-lg font-semibold leading-snug">
+                    <span className="mt-2 line-clamp-2 font-display text-xl font-semibold leading-snug">
                       {product.name}
                     </span>
                     <span className="mt-auto pt-3 font-display text-2xl font-bold tabular text-primary">
@@ -262,18 +262,18 @@ export function VenderPage() {
         />
       </aside>
 
-      <div className="fixed inset-x-0 bottom-[calc(5rem+env(safe-area-inset-bottom,0px))] z-30 border-t border-border bg-card p-3 lg:hidden">
+      <div className="fixed inset-x-0 bottom-[calc(6.5rem+env(safe-area-inset-bottom,0px))] z-30 border-t border-border bg-card p-3 lg:hidden">
         <button
           type="button"
           disabled={!lines.length}
           onClick={() => setTicketOpen(true)}
-          className="focus-ring flex min-h-16 w-full items-center justify-between rounded-2xl bg-foreground px-4 text-on-primary disabled:bg-muted disabled:text-muted-foreground"
+          className="focus-ring flex min-h-[4.5rem] w-full items-center justify-between rounded-2xl bg-foreground px-4 text-on-primary disabled:bg-muted disabled:text-muted-foreground"
         >
-          <span className="text-base font-semibold">
+          <span className="text-lg font-semibold">
             {count} {count === 1 ? "ítem" : "ítems"}
           </span>
-          <span className="font-display text-2xl font-bold tabular">{money(total)}</span>
-          <span className="rounded-xl bg-accent px-4 py-2.5 text-base font-bold text-on-accent">
+          <span className="font-display text-3xl font-bold tabular">{money(total)}</span>
+          <span className="rounded-xl bg-accent px-5 py-3 text-lg font-bold text-on-accent">
             Cobrar
           </span>
         </button>
@@ -295,7 +295,7 @@ export function VenderPage() {
         {notice}
       </div>
       {notice ? (
-        <p className="pointer-events-none fixed bottom-24 left-1/2 z-40 -translate-x-1/2 rounded-full bg-foreground px-4 py-2 text-sm font-bold text-on-primary lg:bottom-8">
+        <p className="pointer-events-none fixed bottom-32 left-1/2 z-40 -translate-x-1/2 rounded-full bg-foreground px-5 py-3 text-base font-bold text-on-primary lg:bottom-8">
           {notice}
         </p>
       ) : null}
@@ -443,24 +443,24 @@ function CartPanel({
               <div className="flex items-center gap-1">
                 <button
                   type="button"
-                  className="focus-ring inline-flex size-11 items-center justify-center rounded-xl bg-card"
+                  className="focus-ring inline-flex size-12 items-center justify-center rounded-xl bg-card"
                   onClick={() => onQty(line.productId, line.qty - 1)}
                   aria-label={`Quitar uno de ${line.name}`}
                 >
                   {line.qty === 1 ? (
-                    <Trash size={18} aria-hidden="true" />
+                    <Trash size={24} aria-hidden="true" />
                   ) : (
-                    <Minus size={18} aria-hidden="true" />
+                    <Minus size={24} aria-hidden="true" />
                   )}
                 </button>
                 <span className="w-8 text-center font-display font-bold tabular">{line.qty}</span>
                 <button
                   type="button"
-                  className="focus-ring inline-flex size-11 items-center justify-center rounded-xl bg-card"
+                  className="focus-ring inline-flex size-12 items-center justify-center rounded-xl bg-card"
                   onClick={() => onQty(line.productId, line.qty + 1)}
                   aria-label={`Agregar uno de ${line.name}`}
                 >
-                  <Plus size={18} aria-hidden="true" />
+                  <Plus size={24} aria-hidden="true" />
                 </button>
               </div>
               <p className="w-24 text-right font-display font-bold tabular">
@@ -567,13 +567,13 @@ function PayModal({
               type="button"
               aria-pressed={pressed}
               onClick={() => choose(id)}
-              className={`focus-ring flex min-h-[88px] flex-col items-center justify-center gap-1 rounded-2xl border text-sm font-bold transition-colors duration-200 ${
+              className={`focus-ring flex min-h-[6.75rem] flex-col items-center justify-center gap-1.5 rounded-2xl border text-base font-bold transition-colors duration-200 ${
                 pressed
                   ? "border-primary bg-primary text-on-primary"
                   : "border-border bg-background hover:border-primary"
               }`}
             >
-              <Icon size={26} aria-hidden="true" />
+              <Icon size={32} aria-hidden="true" />
               {label}
             </button>
           );

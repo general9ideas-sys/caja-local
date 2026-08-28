@@ -66,7 +66,7 @@ export function Layout({
                     : "text-foreground hover:bg-muted"
                 }`}
               >
-                <Icon size={22} weight={active ? "fill" : "regular"} aria-hidden="true" />
+                <Icon size={26} weight={active ? "fill" : "regular"} aria-hidden="true" />
                 {item.label}
               </button>
             );
@@ -85,11 +85,11 @@ export function Layout({
         </div>
       </aside>
 
-      <div className="flex min-h-0 flex-1 flex-col pb-[calc(5rem+env(safe-area-inset-bottom,0px))] lg:pb-0">
-        <header className="flex shrink-0 items-center justify-between gap-3 border-b border-border bg-card px-4 py-3 lg:px-6">
+      <div className="flex min-h-0 flex-1 flex-col pb-[calc(6.5rem+env(safe-area-inset-bottom,0px))] lg:pb-0">
+        <header className="flex shrink-0 items-center justify-between gap-3 border-b border-border bg-card px-4 py-4 lg:px-6">
           <div className="min-w-0 lg:hidden">
-            <p className="truncate font-display text-lg font-bold">{state.settings.storeName}</p>
-            <p className="text-base text-muted-foreground">
+            <p className="truncate font-display text-xl font-bold">{state.settings.storeName}</p>
+            <p className="text-lg text-muted-foreground">
               {sales.length} {sales.length === 1 ? "venta" : "ventas"} · {money(todayTotal)}
             </p>
           </div>
@@ -97,10 +97,10 @@ export function Layout({
             {NAV.find((n) => n.id === page)?.label}
           </p>
           <div className="ml-auto text-right">
-            <p className="font-display text-xl font-semibold tabular">
+            <p className="font-display text-2xl font-semibold tabular">
               {now.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })}
             </p>
-            <p className="text-sm capitalize text-muted-foreground">
+            <p className="text-base capitalize text-muted-foreground">
               {now.toLocaleDateString("es-AR", {
                 weekday: "short",
                 day: "numeric",
@@ -125,11 +125,11 @@ export function Layout({
               type="button"
               onClick={() => onPage(item.id)}
               aria-current={active ? "page" : undefined}
-              className={`focus-ring flex min-h-20 flex-col items-center justify-center gap-1 text-sm font-bold ${
+              className={`focus-ring flex min-h-[5.75rem] flex-col items-center justify-center gap-1.5 text-base font-bold ${
                 active ? "text-primary" : "text-muted-foreground"
               }`}
             >
-              <Icon size={28} weight={active ? "fill" : "regular"} aria-hidden="true" />
+              <Icon size={36} weight={active ? "fill" : "regular"} aria-hidden="true" />
               {item.label}
             </button>
           );

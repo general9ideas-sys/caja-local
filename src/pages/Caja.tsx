@@ -228,7 +228,7 @@ export function CajaPage() {
         </p>
         {diff !== null && diff !== 0 ? (
           <p className="mt-3 flex items-start gap-2 rounded-2xl bg-orange-50 px-3 py-3 text-sm font-medium text-accent-dark">
-            <WarningCircle size={20} className="mt-0.5 shrink-0" aria-hidden="true" />
+            <WarningCircle size={26} className="mt-0.5 shrink-0" aria-hidden="true" />
             Hay una diferencia de {money(Math.abs(diff))} (
             {diff > 0 ? "sobrante" : "faltante"}).
           </p>
@@ -320,12 +320,12 @@ function PayStat({
 }) {
   return (
     <div className="flex items-center gap-3 rounded-3xl bg-card p-4">
-      <span className="inline-flex size-12 items-center justify-center rounded-2xl bg-background text-primary">
-        <Icon size={26} aria-hidden="true" />
+      <span className="inline-flex size-14 items-center justify-center rounded-2xl bg-background text-primary">
+        <Icon size={32} aria-hidden="true" />
       </span>
       <div>
-        <p className="text-sm font-semibold text-muted-foreground">{label}</p>
-        <p className="font-display text-xl font-bold tabular">{value}</p>
+        <p className="text-base font-semibold text-muted-foreground">{label}</p>
+        <p className="font-display text-2xl font-bold tabular">{value}</p>
       </div>
     </div>
   );

@@ -540,7 +540,7 @@ export function BarcodeScanner({
               className="focus-ring inline-flex size-12 items-center justify-center rounded-2xl bg-white/15"
               aria-label="Cerrar cámara"
             >
-              <X size={26} aria-hidden="true" />
+              <X size={32} aria-hidden="true" />
             </button>
             <h2 id={titleId} className="font-display min-w-0 flex-1 text-lg font-bold">
               {title}
@@ -555,7 +555,7 @@ export function BarcodeScanner({
                 }`}
                 aria-label={torchOn ? "Apagar linterna" : "Prender linterna"}
               >
-                <Lightning size={24} weight={torchOn ? "fill" : "regular"} aria-hidden="true" />
+                <Lightning size={28} weight={torchOn ? "fill" : "regular"} aria-hidden="true" />
               </button>
             ) : null}
           </div>

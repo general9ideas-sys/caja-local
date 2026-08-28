@@ -97,10 +97,10 @@ export function ProductForm({
               <button
                 type="button"
                 onClick={() => setScanOpen(true)}
-                className="focus-ring inline-flex size-12 shrink-0 items-center justify-center rounded-2xl bg-muted hover:bg-border"
+                className="focus-ring inline-flex size-16 shrink-0 items-center justify-center rounded-2xl bg-muted hover:bg-border"
                 aria-label="Escanear código de barras"
               >
-                <Barcode size={24} aria-hidden="true" />
+                <Barcode size={28} aria-hidden="true" />
               </button>
             </div>
           </div>

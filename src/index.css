@@ -31,13 +31,13 @@ html {
 
 @media (max-width: 1023px) {
   html {
-    font-size: 18px;
+    font-size: 20px;
   }
 }
 
-@media (max-width: 1023px) and (min-resolution: 2.5dppx) {
+@media (max-width: 1023px) and (min-resolution: 2dppx) {
   html {
-    font-size: 19px;
+    font-size: 22px;
   }
 }
 
@@ -96,7 +96,7 @@ button:disabled,
 
 .field-input {
   width: 100%;
-  min-height: 3.5rem;
+  min-height: 4rem;
   border-radius: 1rem;
   border: 1px solid var(--color-border);
   background: var(--color-background);
