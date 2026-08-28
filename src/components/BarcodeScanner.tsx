@@ -15,6 +15,7 @@ type TrackCaps = MediaTrackCapabilities & {
   torch?: boolean;
   zoom?: { min: number; max: number };
   pointsOfInterest?: boolean;
+  focusDistance?: { min: number; max: number };
 };
 
 type Lens = "0.5" | "1" | "3";
@@ -169,17 +170,65 @@ async function applyHd(track: MediaStreamTrack) {
   }
 }
 
-async function applyContinuousFocus(track: MediaStreamTrack) {
-  const caps = track.getCapabilities() as TrackCaps;
+async function applyConstraint(track: MediaStreamTrack, advanced: MediaTrackConstraintSet) {
   try {
-    if (caps.focusMode?.includes("continuous")) {
-      await track.applyConstraints({
-        advanced: [{ focusMode: "continuous" }],
-      });
-    }
+    await track.applyConstraints({ advanced: [advanced] });
+    return true;
   } catch {
-    /* el autofoco lo maneja el sistema */
+    try {
+      await track.applyConstraints(advanced);
+      return true;
+    } catch {
+      return false;
+    }
   }
+}
+
+function canAutofocus(caps: TrackCaps) {
+  return Boolean(
+    caps.focusMode?.includes("continuous") ||
+      caps.focusMode?.includes("single-shot") ||
+      caps.focusDistance,
+  );
+}
+
+/** Samsung no arranca el autofoco solo: hay que dispararlo al centro (o al toque). */
+async function kickFocus(track: MediaStreamTrack, point = { x: 0.5, y: 0.5 }) {
+  const caps = track.getCapabilities() as TrackCaps;
+  const x = Math.min(1, Math.max(0, point.x));
+  const y = Math.min(1, Math.max(0, point.y));
+  const poi = caps.pointsOfInterest ? { pointsOfInterest: [{ x, y }] } : {};
+
+  if (caps.focusDistance) {
+    const near = Math.min(caps.focusDistance.max, Math.max(caps.focusDistance.min, 0.22));
+    const primed: MediaTrackConstraintSet = { focusDistance: near, ...poi };
+    if (caps.focusMode?.includes("manual")) primed.focusMode = "manual";
+    await applyConstraint(track, primed);
+    await sleep(160);
+  }
+
+  if (caps.focusMode?.includes("single-shot")) {
+    await applyConstraint(track, { focusMode: "single-shot", ...poi });
+    await sleep(320);
+  }
+
+  if (caps.focusMode?.includes("continuous")) {
+    await applyConstraint(track, { focusMode: "continuous", ...poi });
+    return;
+  }
+
+  if (caps.focusMode?.includes("single-shot")) {
+    await applyConstraint(track, { focusMode: "single-shot", ...poi });
+  }
+}
+
+async function holdContinuousFocus(track: MediaStreamTrack) {
+  const caps = track.getCapabilities() as TrackCaps;
+  if (!caps.focusMode?.includes("continuous")) return;
+  await applyConstraint(track, {
+    focusMode: "continuous",
+    ...(caps.pointsOfInterest ? { pointsOfInterest: [{ x: 0.5, y: 0.5 }] } : {}),
+  });
 }
 
 async function openLensStream(lens: Lens): Promise<{
@@ -193,18 +242,44 @@ async function openLensStream(lens: Lens): Promise<{
   const rear = rearCameras(devices);
   const uwDeviceId = probe.getVideoTracks()[0]?.getSettings().deviceId ?? "";
   const wantedId = pickLensDevice(rear, uwDeviceId, lens);
+  probe.getTracks().forEach((track) => track.stop());
+  await sleep(400);
 
-  if (wantedId && wantedId !== uwDeviceId) {
-    probe.getTracks().forEach((track) => track.stop());
-    await sleep(400);
-    const stream = await getCamera({
-      ...HD,
-      deviceId: { exact: wantedId },
-    });
-    return { stream, onUwDefault: false, rear, uwDeviceId };
+  const others = rear
+    .map((d) => d.deviceId)
+    .filter((id) => id && id !== uwDeviceId && id !== wantedId);
+  const order = [...new Set([wantedId, ...others, uwDeviceId].filter(Boolean))] as string[];
+
+  let fallback: { stream: MediaStream; onUwDefault: boolean } | null = null;
+  for (const id of order) {
+    try {
+      if (fallback) {
+        await sleep(350);
+      }
+      const stream = await getCamera({
+        ...HD,
+        deviceId: { exact: id },
+      });
+      const caps = stream.getVideoTracks()[0].getCapabilities() as TrackCaps;
+      const isUw = id === uwDeviceId;
+      if (lens === "1" && canAutofocus(caps) && !isUw) {
+        fallback?.stream.getTracks().forEach((t) => t.stop());
+        return { stream, onUwDefault: false, rear, uwDeviceId };
+      }
+      if (!fallback) fallback = { stream, onUwDefault: isUw };
+      else stream.getTracks().forEach((t) => t.stop());
+    } catch {
+      await sleep(250);
+    }
   }
 
-  return { stream: probe, onUwDefault: true, rear, uwDeviceId };
+  if (fallback) return { ...fallback, rear, uwDeviceId };
+
+  const stream = await getCamera({
+    ...HD,
+    facingMode: { ideal: "environment" },
+  });
+  return { stream, onUwDefault: true, rear, uwDeviceId };
 }
 
 export function BarcodeScanner({
@@ -246,6 +321,7 @@ export function BarcodeScanner({
     setShowLenses(false);
     let cancelled = false;
     let timer = 0;
+    let focusTimer = 0;
 
     async function attach(stream: MediaStream, onUwDefault: boolean, activeLens: Lens) {
       const video = videoRef.current;
@@ -263,7 +339,10 @@ export function BarcodeScanner({
       await sleep(200);
       if (cancelled) return;
       await applyLensZoom(track, activeLens, onUwDefault);
-      await applyContinuousFocus(track);
+      if (cancelled) return;
+      await sleep(250);
+      if (cancelled) return;
+      await kickFocus(track);
       const caps = track.getCapabilities() as TrackCaps;
       setHasTorch(Boolean(caps.torch));
       setShowLenses(rearRef.current.length > 1 || Boolean(caps.zoom && caps.zoom.max > caps.zoom.min));
@@ -282,6 +361,12 @@ export function BarcodeScanner({
         uwDeviceIdRef.current = opened.uwDeviceId;
         onUwDefaultRef.current = opened.onUwDefault;
         await attach(opened.stream, opened.onUwDefault, "1");
+        if (!cancelled) {
+          focusTimer = window.setInterval(() => {
+            const live = trackRef.current;
+            if (live) void holdContinuousFocus(live);
+          }, 1600);
+        }
 
         const Detector = window.BarcodeDetector;
         let detector: BarcodeDetector | null = null;
@@ -342,6 +427,7 @@ export function BarcodeScanner({
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
+      window.clearInterval(focusTimer);
       trackRef.current = null;
       const video = videoRef.current;
       if (video) video.srcObject = null;
@@ -360,7 +446,11 @@ export function BarcodeScanner({
 
     if (stay) {
       const track = trackRef.current;
-      if (track) await applyLensZoom(track, next, onUwDefaultRef.current || wantedId === uwDeviceIdRef.current);
+      if (track) {
+        await applyLensZoom(track, next, onUwDefaultRef.current || wantedId === uwDeviceIdRef.current);
+        await sleep(250);
+        await kickFocus(track);
+      }
       return;
     }
 
@@ -379,7 +469,8 @@ export function BarcodeScanner({
     await video.play();
     await sleep(200);
     await applyLensZoom(trackRef.current, next, onUw);
-    await applyContinuousFocus(trackRef.current);
+    await sleep(250);
+    await kickFocus(trackRef.current);
     const caps = trackRef.current.getCapabilities() as TrackCaps;
     setHasTorch(Boolean(caps.torch));
   }
@@ -406,19 +497,9 @@ export function BarcodeScanner({
       y: clientY - host.getBoundingClientRect().top,
     });
     window.setTimeout(() => setFocusHint(null), 600);
-    const caps = track.getCapabilities() as TrackCaps;
     const x = (clientX - rect.left) / rect.width;
     const y = (clientY - rect.top) / rect.height;
-    try {
-      if (caps.focusMode?.includes("continuous")) {
-        await track.applyConstraints({ advanced: [{ focusMode: "continuous" }] });
-      }
-      if (caps.pointsOfInterest) {
-        await track.applyConstraints({ advanced: [{ pointsOfInterest: [{ x, y }] }] });
-      }
-    } catch {
-      /* sin tap-to-focus */
-    }
+    await kickFocus(track, { x, y });
   }
 
   if (!open) return null;

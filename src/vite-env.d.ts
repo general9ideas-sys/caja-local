@@ -27,4 +27,5 @@ interface MediaTrackConstraintSet {
   zoom?: number;
   torch?: boolean;
   pointsOfInterest?: Array<{ x: number; y: number }>;
+  focusDistance?: number;
 }

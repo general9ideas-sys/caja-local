@@ -165,7 +165,7 @@ export function ProductForm({
       <BarcodeScanner
         open={scanOpen}
         title="Escanear producto"
-        hint="La cámara tiene que verse nítida. Poné el código en el recuadro."
+        hint="Poné el código en el recuadro. Tocá la pantalla si no enfoca."
         onClose={() => setScanOpen(false)}
         onDetected={(code) => {
           setSku(code);

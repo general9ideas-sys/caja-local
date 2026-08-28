@@ -134,7 +134,7 @@ export function ProductosPage() {
       <BarcodeScanner
         open={scanOpen}
         title="Escanear para registrar"
-        hint="La cámara tiene que verse nítida. Poné el código en el recuadro; tocá para enfocar."
+        hint="Poné el código en el recuadro. Tocá la pantalla si no enfoca."
         onClose={() => setScanOpen(false)}
         onDetected={onScanned}
       />
