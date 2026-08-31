@@ -336,9 +336,9 @@ export function VenderPage() {
         catalogMode={catalogMode}
         onClose={() => setRegisterCode(null)}
         onSave={(product) => {
-          upsertProduct(product);
-          addProduct(product);
-          setNotice(`${product.name} agregado`);
+          const saved = upsertProduct({ ...product, shared: true });
+          addProduct(saved);
+          setNotice(`${saved.name} agregado`);
           setRegisterCode(null);
         }}
       />

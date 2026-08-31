@@ -12,7 +12,6 @@ export function ProductForm({
   initialSku = "",
   onClose,
   onSave,
-  catalogMode = "own",
   variant = "pos",
 }: {
   open: boolean;
@@ -35,7 +34,6 @@ export function ProductForm({
   const [stock, setStock] = useState(String(product?.stock ?? 0));
   const [sku, setSku] = useState(product?.sku || initialSku);
   const [visibleOnline, setVisibleOnline] = useState(product?.visibleOnline ?? false);
-  const [shared, setShared] = useState(product?.shared ?? catalogMode === "shared");
   const [error, setError] = useState("");
   const [scanOpen, setScanOpen] = useState(false);
 
@@ -73,7 +71,7 @@ export function ProductForm({
               sku: sku.trim(),
               active: true,
               visibleOnline,
-              shared: variant === "business" ? true : shared,
+              shared: true,
             });
           }}
         >
@@ -172,16 +170,14 @@ export function ProductForm({
             Visible en el catálogo online
           </label>
           {variant === "pos" ? (
-            <label className="flex items-center gap-2 text-sm font-semibold">
-              <input
-                type="checkbox"
-                checked={shared}
-                onChange={(e) => setShared(e.target.checked)}
-                disabled={Boolean(product?.shared)}
-              />
-              Compartir en todos los locales del negocio
-            </label>
-          ) : null}
+            <p className="text-xs text-muted-foreground">
+              Se guarda en el catálogo de todos los locales. El stock es solo de este local.
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              Este producto queda en el catálogo de todos los locales.
+            </p>
+          )}
           <button
             type="submit"
             className="focus-ring min-h-10 w-full rounded-xl bg-primary font-display text-sm font-bold text-on-primary hover:bg-primary-dark"

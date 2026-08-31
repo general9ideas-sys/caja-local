@@ -1,4 +1,4 @@
-import { PencilSimple, Plus, SignOut, Trash } from "@phosphor-icons/react";
+import { Barcode, PencilSimple, Plus, SignOut, Trash } from "@phosphor-icons/react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
@@ -12,7 +12,9 @@ import {
 } from "firebase/firestore";
 import { useAuth } from "../auth";
 import { ProductForm } from "../components/ProductForm";
+import { BarcodeScanner } from "../components/BarcodeScanner";
 import { GENERIC_CATALOGS } from "../data/catalogs";
+import { catalogDocId, findByBarcode } from "../lib/barcode";
 import { getDb } from "../lib/firebase";
 import { firebaseMessage } from "../lib/firebaseErrors";
 import { money, uid } from "../lib/format";
@@ -23,6 +25,8 @@ export function CatalogoNegocioPage() {
   const navigate = useNavigate();
   const [products, setProducts] = useState<Product[]>([]);
   const [editing, setEditing] = useState<Product | null | "new">(null);
+  const [initialSku, setInitialSku] = useState("");
+  const [scanOpen, setScanOpen] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -45,10 +49,10 @@ export function CatalogoNegocioPage() {
                 sku: (data.sku as string) || "",
                 active: data.active !== false,
                 visibleOnline: Boolean(data.visibleOnline),
-                shared: data.storeId == null,
+                shared: true,
               } satisfies Product;
             })
-            .filter((p) => p.shared && p.active),
+            .filter((p) => p.active),
         );
       },
     );
@@ -62,9 +66,10 @@ export function CatalogoNegocioPage() {
   async function saveProduct(product: Product) {
     const db = getDb();
     if (!db || !profile) return;
-    const id = product.sku
-      ? `${profile.businessId}_${product.sku}`
-      : product.id || uid();
+    const id =
+      product.id && products.some((p) => p.id === product.id)
+        ? product.id
+        : catalogDocId(profile.businessId, product.sku, product.id || uid());
     await setDoc(
       doc(db, "products", id),
       {
@@ -158,10 +163,21 @@ export function CatalogoNegocioPage() {
           <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-destructive">{error}</p>
         ) : null}
 
-        <div className="flex justify-end">
+        <div className="flex justify-end gap-2">
           <button
             type="button"
-            onClick={() => setEditing("new")}
+            onClick={() => setScanOpen(true)}
+            className="focus-ring inline-flex min-h-10 items-center gap-1.5 rounded-xl bg-muted px-4 text-sm font-bold"
+          >
+            <Barcode size={16} />
+            Escanear
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setInitialSku("");
+              setEditing("new");
+            }}
             className="focus-ring inline-flex min-h-10 items-center gap-1.5 rounded-xl bg-primary px-4 text-sm font-bold text-on-primary"
           >
             <Plus size={16} weight="bold" />
@@ -228,11 +244,30 @@ export function CatalogoNegocioPage() {
       </main>
 
       <ProductForm
+        key={editing === "new" ? `new-${initialSku}` : editing?.id ?? "closed"}
         open={editing !== null}
         product={editing === "new" ? null : editing}
+        initialSku={initialSku}
         onClose={() => setEditing(null)}
         onSave={(product) => void saveProduct(product)}
         variant="business"
+      />
+      <BarcodeScanner
+        open={scanOpen}
+        title="Escanear para el catálogo"
+        hint="Poné el código en el recuadro. Tocá la pantalla si no enfoca."
+        onClose={() => setScanOpen(false)}
+        onDetected={(code) => {
+          setScanOpen(false);
+          const found = findByBarcode(products, code);
+          if (found) {
+            setInitialSku("");
+            setEditing(found);
+            return;
+          }
+          setInitialSku(code);
+          setEditing("new");
+        }}
       />
     </div>
   );

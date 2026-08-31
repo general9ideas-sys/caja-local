@@ -22,6 +22,7 @@ import {
 } from "firebase/firestore";
 import { useAuth } from "./auth";
 import { seedProducts } from "./data/seed";
+import { catalogDocId } from "./lib/barcode";
 import { getDb } from "./lib/firebase";
 import { cartTotal, uid } from "./lib/format";
 import type {
@@ -208,7 +209,7 @@ export interface StoreApi {
   catalogMode: CatalogMode;
   openCash: (openingCashCents: number) => void | Promise<void>;
   closeCash: (countedCashCents: number, notes: string) => void | Promise<void>;
-  upsertProduct: (product: Product) => void;
+  upsertProduct: (product: Product) => Product;
   removeProduct: (id: string) => void;
   completeSale: (
     lines: CartLine[],
@@ -280,7 +281,11 @@ function LocalStoreProvider({ children }: { children: ReactNode }) {
       openCash: (openingCashCents) => dispatch({ type: "open-cash", openingCashCents }),
       closeCash: (countedCashCents, notes) =>
         dispatch({ type: "close-cash", countedCashCents, notes }),
-      upsertProduct: (product) => dispatch({ type: "upsert-product", product }),
+      upsertProduct: (product) => {
+        const next = { ...product, shared: true };
+        dispatch({ type: "upsert-product", product: next });
+        return next;
+      },
       removeProduct: (id) => dispatch({ type: "remove-product", id }),
       completeSale,
       cancelSale: (id) => dispatch({ type: "cancel-sale", id }),
@@ -349,13 +354,13 @@ function CloudStoreProvider({ children }: { children: ReactNode }) {
 
     const flush = () => {
       const current = stores.find((s) => s.id === storeId);
-      const list = products.filter((p) => p.shared);
       dispatch({
         type: "hydrate",
         state: {
-          products: list.map((p) => ({
+          products: products.map((p) => ({
             ...p,
-            stock: inventory.get(p.id) ?? p.stock ?? 0,
+            shared: true,
+            stock: inventory.get(p.id) ?? 0,
           })),
           sales,
           sessions,
@@ -380,7 +385,7 @@ function CloudStoreProvider({ children }: { children: ReactNode }) {
             sku: data.sku ?? "",
             active: data.active !== false,
             visibleOnline: Boolean(data.visibleOnline),
-            shared: data.storeId == null,
+            shared: true,
           });
         });
         flush();
@@ -533,28 +538,34 @@ function CloudStoreProvider({ children }: { children: ReactNode }) {
       },
       upsertProduct: (product) => {
         const db = getDb();
-        if (!db || !businessId || !storeId) return;
-        const shared = product.shared && (store?.catalogMode ?? "shared") === "shared";
-        void setDoc(doc(db, "products", product.id), {
-          businessId,
-          storeId: shared ? null : storeId,
-          name: product.name,
-          priceCents: product.priceCents,
-          category: product.category,
-          sku: product.sku,
-          active: product.active,
-          visibleOnline: product.visibleOnline,
-        });
+        if (!db || !businessId || !storeId) return product;
+        const id = catalogDocId(businessId, product.sku, product.id);
+        const next: Product = { ...product, id, shared: true };
         void setDoc(
-          doc(db, "inventory", inventoryId(storeId, product.id)),
+          doc(db, "products", id),
           {
-            storeId,
-            productId: product.id,
             businessId,
-            stock: product.stock,
+            storeId: null,
+            name: next.name,
+            priceCents: next.priceCents,
+            category: next.category,
+            sku: next.sku,
+            active: next.active,
+            visibleOnline: next.visibleOnline,
           },
           { merge: true },
         );
+        void setDoc(
+          doc(db, "inventory", inventoryId(storeId, id)),
+          {
+            storeId,
+            productId: id,
+            businessId,
+            stock: next.stock,
+          },
+          { merge: true },
+        );
+        return next;
       },
       removeProduct: (id) => {
         const db = getDb();
@@ -696,9 +707,6 @@ export async function fetchPublicCatalog(slug: string) {
   const products = productsSnap.docs
     .map((d) => {
       const data = d.data();
-      const shared = data.storeId == null;
-      if (store.catalogMode === "own" && shared) return null;
-      if (data.storeId && data.storeId !== storeDoc.id) return null;
       if (data.active === false) return null;
       return normalizeProduct({
         id: d.id,
@@ -709,7 +717,7 @@ export async function fetchPublicCatalog(slug: string) {
         sku: data.sku ?? "",
         active: true,
         visibleOnline: true,
-        shared,
+        shared: true,
       });
     })
     .filter((p): p is Product => Boolean(p));

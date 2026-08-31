@@ -19,7 +19,7 @@ import {
 } from "../store";
 
 export function CajaPage() {
-  const { state, closeCash, updateSettings, resetDemo, cloud, catalogMode, updateCatalogMode, importLocalData } = useStore();
+  const { state, closeCash, updateSettings, resetDemo, cloud, importLocalData } = useStore();
   const { signOut } = useAuth();
   const navigate = useNavigate();
   const session = useOpenSession();
@@ -226,26 +226,13 @@ export function CajaPage() {
           </button>
         </div>
         {cloud ? (
-          <>
-            <label className="mt-4 block text-sm font-semibold">
-              Catálogo de este local
-              <select
-                value={catalogMode}
-                onChange={(e) => updateCatalogMode(e.target.value as "shared" | "own")}
-                className="field-input mt-1"
-              >
-                <option value="shared">Compartido con el negocio (stock de este local)</option>
-                <option value="own">Solo productos de este local</option>
-              </select>
-            </label>
-            <button
-              type="button"
-              onClick={() => void importLocalData()}
-              className="focus-ring mt-4 text-sm font-bold text-primary hover:underline"
-            >
-              Importar datos guardados en esta PC
-            </button>
-          </>
+          <button
+            type="button"
+            onClick={() => void importLocalData()}
+            className="focus-ring mt-4 text-sm font-bold text-primary hover:underline"
+          >
+            Importar datos guardados en esta PC
+          </button>
         ) : (
           <button
             type="button"

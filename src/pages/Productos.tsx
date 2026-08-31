@@ -87,7 +87,6 @@ export function ProductosPage() {
                 {product.category}
                 {product.sku ? ` · ${product.sku}` : ""} · Stock {product.stock}
                 {product.visibleOnline ? " · Catálogo web" : ""}
-                {product.shared ? " · Compartido" : ""}
               </p>
             </div>
             <p className="font-display text-sm font-bold tabular">{money(product.priceCents)}</p>
