@@ -12,12 +12,14 @@ export function ProductForm({
   initialSku = "",
   onClose,
   onSave,
+  catalogMode = "own",
 }: {
   open: boolean;
   product: Product | null;
   initialSku?: string;
   onClose: () => void;
   onSave: (product: Product) => void;
+  catalogMode?: "shared" | "own";
 }) {
   const nameId = useId();
   const priceId = useId();
@@ -30,6 +32,8 @@ export function ProductForm({
   const [category, setCategory] = useState(product?.category ?? "Otros");
   const [stock, setStock] = useState(String(product?.stock ?? 0));
   const [sku, setSku] = useState(product?.sku || initialSku);
+  const [visibleOnline, setVisibleOnline] = useState(product?.visibleOnline ?? false);
+  const [shared, setShared] = useState(product?.shared ?? catalogMode === "shared");
   const [error, setError] = useState("");
   const [scanOpen, setScanOpen] = useState(false);
 
@@ -66,6 +70,8 @@ export function ProductForm({
               stock: stockN,
               sku: sku.trim(),
               active: true,
+              visibleOnline,
+              shared,
             });
           }}
         >
@@ -97,10 +103,10 @@ export function ProductForm({
               <button
                 type="button"
                 onClick={() => setScanOpen(true)}
-                className="focus-ring inline-flex size-16 shrink-0 items-center justify-center rounded-2xl bg-muted hover:bg-border"
+                className="focus-ring inline-flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted hover:bg-border"
                 aria-label="Escanear código de barras"
               >
-                <Barcode size={28} aria-hidden="true" />
+                <Barcode size={18} aria-hidden="true" />
               </button>
             </div>
           </div>
@@ -144,7 +150,7 @@ export function ProductForm({
               ))}
             </datalist>
           </Field>
-          <Field id={stockId} label="Stock">
+          <Field id={stockId} label="Stock en este local">
             <input
               id={stockId}
               value={stock}
@@ -153,9 +159,26 @@ export function ProductForm({
               className="field-input"
             />
           </Field>
+          <label className="flex items-center gap-2 text-sm font-semibold">
+            <input
+              type="checkbox"
+              checked={visibleOnline}
+              onChange={(e) => setVisibleOnline(e.target.checked)}
+            />
+            Visible en el catálogo online
+          </label>
+          <label className="flex items-center gap-2 text-sm font-semibold">
+            <input
+              type="checkbox"
+              checked={shared}
+              onChange={(e) => setShared(e.target.checked)}
+              disabled={Boolean(product?.shared)}
+            />
+            Compartir en todos los locales del negocio
+          </label>
           <button
             type="submit"
-            className="focus-ring min-h-14 w-full rounded-2xl bg-primary font-display text-lg font-bold text-on-primary hover:bg-primary-dark"
+            className="focus-ring min-h-10 w-full rounded-xl bg-primary font-display text-sm font-bold text-on-primary hover:bg-primary-dark"
           >
             Guardar
           </button>

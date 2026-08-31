@@ -8,7 +8,7 @@ import { useStore } from "../store";
 import type { Product } from "../types";
 
 export function ProductosPage() {
-  const { state, upsertProduct, removeProduct } = useStore();
+  const { state, upsertProduct, removeProduct, catalogMode } = useStore();
   const [query, setQuery] = useState("");
   const [editing, setEditing] = useState<Product | null | "new">(null);
   const [initialSku, setInitialSku] = useState("");
@@ -39,29 +39,29 @@ export function ProductosPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl p-4 pb-8 lg:p-6">
+    <div className="mx-auto h-full max-w-5xl overflow-y-auto p-4 pb-8 lg:p-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <label className="relative block min-w-0 flex-1">
           <span className="sr-only">Buscar productos</span>
           <MagnifyingGlass
-            size={26}
-            className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground"
+            size={18}
+            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
             aria-hidden="true"
           />
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Buscar nombre, código o rubro"
-            className="focus-ring min-h-16 w-full rounded-2xl border border-border bg-card py-3 pl-14 pr-4 text-xl"
+            className="focus-ring min-h-10 w-full rounded-xl border border-border bg-card py-2 pl-10 pr-3 text-sm"
           />
         </label>
         <div className="flex gap-2">
           <button
             type="button"
             onClick={() => setScanOpen(true)}
-            className="focus-ring inline-flex min-h-16 flex-1 items-center justify-center gap-2 rounded-2xl bg-muted px-4 text-lg font-bold sm:flex-none"
+            className="focus-ring inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-xl bg-muted px-4 text-sm font-bold sm:flex-none"
           >
-            <Barcode size={28} aria-hidden="true" />
+            <Barcode size={18} aria-hidden="true" />
             Escanear
           </button>
           <button
@@ -70,9 +70,9 @@ export function ProductosPage() {
               setInitialSku("");
               setEditing("new");
             }}
-            className="focus-ring inline-flex min-h-16 flex-1 items-center justify-center gap-2 rounded-2xl bg-primary px-5 font-display text-lg font-bold text-on-primary hover:bg-primary-dark sm:flex-none"
+            className="focus-ring inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-xl bg-primary px-4 font-display text-sm font-bold text-on-primary hover:bg-primary-dark sm:flex-none"
           >
-            <Plus size={28} aria-hidden="true" />
+            <Plus size={18} aria-hidden="true" />
             Nuevo
           </button>
         </div>
@@ -80,33 +80,35 @@ export function ProductosPage() {
 
       <ul className="mt-4 divide-y divide-border overflow-hidden rounded-3xl bg-card">
         {filtered.map((product) => (
-          <li key={product.id} className="flex items-center gap-3 px-4 py-5">
+          <li key={product.id} className="flex items-center gap-3 px-4 py-2.5">
             <div className="min-w-0 flex-1">
-              <p className="truncate font-display text-xl font-semibold">{product.name}</p>
-              <p className="text-lg text-muted-foreground">
+              <p className="truncate font-display text-sm font-semibold">{product.name}</p>
+              <p className="text-xs text-muted-foreground">
                 {product.category}
                 {product.sku ? ` · ${product.sku}` : ""} · Stock {product.stock}
+                {product.visibleOnline ? " · Catálogo web" : ""}
+                {product.shared ? " · Compartido" : ""}
               </p>
             </div>
-            <p className="font-display text-xl font-bold tabular">{money(product.priceCents)}</p>
+            <p className="font-display text-sm font-bold tabular">{money(product.priceCents)}</p>
             <button
               type="button"
               onClick={() => {
                 setInitialSku("");
                 setEditing(product);
               }}
-              className="focus-ring inline-flex size-14 items-center justify-center rounded-xl hover:bg-muted"
+              className="focus-ring inline-flex size-9 items-center justify-center rounded-lg hover:bg-muted"
               aria-label={`Editar ${product.name}`}
             >
-              <PencilSimple size={26} aria-hidden="true" />
+              <PencilSimple size={18} aria-hidden="true" />
             </button>
             <button
               type="button"
               onClick={() => removeProduct(product.id)}
-              className="focus-ring inline-flex size-14 items-center justify-center rounded-xl text-destructive hover:bg-red-50"
+              className="focus-ring inline-flex size-9 items-center justify-center rounded-lg text-destructive hover:bg-red-50"
               aria-label={`Quitar ${product.name}`}
             >
-              <Trash size={26} aria-hidden="true" />
+              <Trash size={18} aria-hidden="true" />
             </button>
           </li>
         ))}
@@ -124,6 +126,7 @@ export function ProductosPage() {
         open={editing !== null}
         product={editing === "new" || editing === null ? null : editing}
         initialSku={initialSku}
+        catalogMode={catalogMode}
         onClose={() => setEditing(null)}
         onSave={(product) => {
           upsertProduct(product);

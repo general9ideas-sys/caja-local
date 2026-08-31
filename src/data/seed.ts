@@ -12,7 +12,7 @@ export const DEFAULT_CATEGORIES = [
 ];
 
 export function seedProducts(): Product[] {
-  const items: Array<Omit<Product, "id" | "active">> = [
+  const items: Array<Omit<Product, "id" | "active" | "shared" | "visibleOnline">> = [
     { name: "Coca-Cola 500 ml", priceCents: 180000, category: "Bebidas", stock: 24, sku: "BEB-001" },
     { name: "Agua mineral 500 ml", priceCents: 90000, category: "Bebidas", stock: 36, sku: "BEB-002" },
     { name: "Cerveza lata 473 ml", priceCents: 220000, category: "Bebidas", stock: 18, sku: "BEB-003" },
@@ -35,5 +35,11 @@ export function seedProducts(): Product[] {
     { name: "Bolsa de hielo", priceCents: 100000, category: "Otros", stock: 15, sku: "OTR-001" },
   ];
 
-  return items.map((item) => ({ ...item, id: uid(), active: true }));
+  return items.map((item) => ({
+    ...item,
+    id: uid(),
+    active: true,
+    visibleOnline: false,
+    shared: true,
+  }));
 }

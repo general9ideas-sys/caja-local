@@ -2,6 +2,10 @@ export type PaymentMethod = "efectivo" | "tarjeta" | "transferencia";
 
 export type PageId = "vender" | "productos" | "caja" | "ventas";
 
+export type CatalogMode = "shared" | "own";
+
+export type UserRole = "owner" | "cashier";
+
 export interface Product {
   id: string;
   name: string;
@@ -10,6 +14,8 @@ export interface Product {
   stock: number;
   sku: string;
   active: boolean;
+  visibleOnline: boolean;
+  shared: boolean;
 }
 
 export interface CartLine {
@@ -29,6 +35,8 @@ export interface Sale {
   ticket: number;
   createdAt: string;
   sessionId: string;
+  storeId?: string;
+  businessId?: string;
   lines: CartLine[];
   payments: Payment[];
   totalCents: number;
@@ -45,6 +53,8 @@ export interface CashSession {
   countedCashCents?: number;
   notes: string;
   status: "open" | "closed";
+  storeId?: string;
+  businessId?: string;
 }
 
 export interface Settings {
@@ -56,5 +66,29 @@ export interface AppState {
   sales: Sale[];
   sessions: CashSession[];
   settings: Settings;
+  nextTicket: number;
+}
+
+export interface Profile {
+  uid: string;
+  email: string;
+  name: string;
+  role: UserRole;
+  businessId: string;
+  storeId?: string;
+}
+
+export interface Business {
+  id: string;
+  name: string;
+  ownerId: string;
+}
+
+export interface StoreRecord {
+  id: string;
+  businessId: string;
+  name: string;
+  slug: string;
+  catalogMode: CatalogMode;
   nextTicket: number;
 }

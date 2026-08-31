@@ -52,17 +52,17 @@ export function Modal({ open, title, onClose, children, wide }: ModalProps) {
         }`}
       >
         <div className="mb-4 flex items-start justify-between gap-3">
-          <h2 id={titleId} className="font-display text-2xl font-semibold text-foreground">
+          <h2 id={titleId} className="font-display text-lg font-semibold text-foreground">
             {title}
           </h2>
           {onClose ? (
             <button
               type="button"
               onClick={onClose}
-              className="focus-ring inline-flex size-12 items-center justify-center rounded-xl text-muted-foreground hover:bg-muted"
+              className="focus-ring inline-flex size-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted"
               aria-label="Cerrar"
             >
-              <X size={28} aria-hidden="true" />
+              <X size={18} aria-hidden="true" />
             </button>
           ) : null}
         </div>

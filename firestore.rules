@@ -1,0 +1,59 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+    function profile() {
+      return get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data;
+    }
+    function isOwner(bizId) {
+      return signedIn() && profile().role == 'owner' && profile().businessId == bizId;
+    }
+    function isMember(bizId) {
+      return signedIn() && profile().businessId == bizId;
+    }
+    function isCashierOf(storeId) {
+      return signedIn() && profile().role == 'cashier' && profile().storeId == storeId;
+    }
+
+    match /businesses/{id} {
+      allow read: if isMember(id);
+      allow create: if signedIn() && request.resource.data.ownerId == request.auth.uid;
+      allow update, delete: if isOwner(id);
+    }
+
+    match /profiles/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || isOwner(resource.data.businessId));
+      allow create: if signedIn();
+      allow update: if request.auth.uid == uid || isOwner(resource.data.businessId);
+    }
+
+    match /stores/{id} {
+      allow read: if true;
+      allow create: if isOwner(request.resource.data.businessId);
+      allow update: if isOwner(resource.data.businessId) || isCashierOf(id);
+    }
+
+    match /products/{id} {
+      allow read: if resource.data.visibleOnline == true || isMember(resource.data.businessId);
+      allow create: if isMember(request.resource.data.businessId);
+      allow update, delete: if isMember(resource.data.businessId);
+    }
+
+    match /inventory/{id} {
+      allow create: if isMember(request.resource.data.businessId);
+      allow read, update, delete: if isMember(resource.data.businessId);
+    }
+
+    match /sales/{id} {
+      allow create: if isMember(request.resource.data.businessId);
+      allow read, update, delete: if isMember(resource.data.businessId);
+    }
+
+    match /sessions/{id} {
+      allow create: if isMember(request.resource.data.businessId);
+      allow read, update, delete: if isMember(resource.data.businessId);
+    }
+  }
+}

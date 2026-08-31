@@ -69,7 +69,7 @@ export function OpenCashGate() {
         </p>
         <button
           type="submit"
-          className="focus-ring mt-6 min-h-14 w-full rounded-2xl bg-primary font-display text-lg font-bold text-on-primary transition-colors duration-200 hover:bg-primary-dark"
+          className="focus-ring mt-6 min-h-10 w-full rounded-xl bg-primary font-display text-sm font-bold text-on-primary transition-colors duration-200 hover:bg-primary-dark"
         >
           Abrir caja y vender
         </button>

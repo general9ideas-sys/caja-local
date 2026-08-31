@@ -16,7 +16,7 @@ import {
 } from "../store";
 
 export function CajaPage() {
-  const { state, closeCash, updateSettings, resetDemo } = useStore();
+  const { state, closeCash, updateSettings, resetDemo, cloud, catalogMode, updateCatalogMode, importLocalData } = useStore();
   const session = useOpenSession();
   const [counted, setCounted] = useState("");
   const [notes, setNotes] = useState("");
@@ -48,7 +48,7 @@ export function CajaPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 p-4 pb-8 lg:p-6">
+    <div className="mx-auto h-full max-w-5xl space-y-6 overflow-y-auto p-4 pb-8 lg:p-6">
       {session ? (
         <>
           <section className="rounded-3xl bg-card p-5 shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
@@ -191,6 +191,13 @@ export function CajaPage() {
 
       <section className="rounded-3xl bg-card p-5">
         <h2 className="font-display text-xl font-semibold">Local</h2>
+        {!cloud ? (
+          <p className="mt-2 rounded-xl bg-muted px-3 py-2 text-sm text-muted-foreground">
+            Esta PC guarda los datos solo acá. Para varios locales y el catálogo online, creá un
+            proyecto Firebase, copiá las claves en <code>.env</code> (ver <code>.env.example</code>)
+            y volvé a publicar.
+          </p>
+        ) : null}
         <label htmlFor={nameId} className="mt-3 block text-sm font-semibold">
           Nombre del local
         </label>
@@ -204,18 +211,41 @@ export function CajaPage() {
           <button
             type="button"
             onClick={() => updateSettings({ storeName: storeName.trim() || "Mi local" })}
-            className="focus-ring min-h-12 rounded-2xl bg-primary px-5 font-bold text-on-primary hover:bg-primary-dark"
+            className="focus-ring min-h-10 rounded-xl bg-primary px-5 text-sm font-bold text-on-primary hover:bg-primary-dark"
           >
             Guardar nombre
           </button>
         </div>
-        <button
-          type="button"
-          onClick={() => setConfirmReset(true)}
-          className="focus-ring mt-6 text-sm font-bold text-destructive hover:underline"
-        >
-          Restaurar datos de ejemplo
-        </button>
+        {cloud ? (
+          <>
+            <label className="mt-4 block text-sm font-semibold">
+              Catálogo de este local
+              <select
+                value={catalogMode}
+                onChange={(e) => updateCatalogMode(e.target.value as "shared" | "own")}
+                className="field-input mt-1"
+              >
+                <option value="shared">Compartido con el negocio (stock de este local)</option>
+                <option value="own">Solo productos de este local</option>
+              </select>
+            </label>
+            <button
+              type="button"
+              onClick={() => void importLocalData()}
+              className="focus-ring mt-4 text-sm font-bold text-primary hover:underline"
+            >
+              Importar datos guardados en esta PC
+            </button>
+          </>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setConfirmReset(true)}
+            className="focus-ring mt-6 text-sm font-bold text-destructive hover:underline"
+          >
+            Restaurar datos de ejemplo
+          </button>
+        )}
       </section>
 
       <Modal
@@ -228,7 +258,7 @@ export function CajaPage() {
         </p>
         {diff !== null && diff !== 0 ? (
           <p className="mt-3 flex items-start gap-2 rounded-2xl bg-orange-50 px-3 py-3 text-sm font-medium text-accent-dark">
-            <WarningCircle size={26} className="mt-0.5 shrink-0" aria-hidden="true" />
+            <WarningCircle size={18} className="mt-0.5 shrink-0" aria-hidden="true" />
             Hay una diferencia de {money(Math.abs(diff))} (
             {diff > 0 ? "sobrante" : "faltante"}).
           </p>
@@ -320,12 +350,12 @@ function PayStat({
 }) {
   return (
     <div className="flex items-center gap-3 rounded-3xl bg-card p-4">
-      <span className="inline-flex size-14 items-center justify-center rounded-2xl bg-background text-primary">
-        <Icon size={32} aria-hidden="true" />
+      <span className="inline-flex size-10 items-center justify-center rounded-xl bg-background text-primary">
+        <Icon size={20} aria-hidden="true" />
       </span>
       <div>
-        <p className="text-base font-semibold text-muted-foreground">{label}</p>
-        <p className="font-display text-2xl font-bold tabular">{value}</p>
+        <p className="text-xs font-semibold text-muted-foreground">{label}</p>
+        <p className="font-display text-lg font-bold tabular">{value}</p>
       </div>
     </div>
   );

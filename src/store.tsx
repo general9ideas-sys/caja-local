@@ -5,21 +5,46 @@ import {
   useEffect,
   useMemo,
   useReducer,
+  useState,
   type ReactNode,
 } from "react";
+import {
+  collection,
+  doc,
+  getDocs,
+  increment,
+  onSnapshot,
+  query,
+  setDoc,
+  updateDoc,
+  where,
+  writeBatch,
+} from "firebase/firestore";
+import { useAuth } from "./auth";
 import { seedProducts } from "./data/seed";
+import { getDb } from "./lib/firebase";
 import { cartTotal, uid } from "./lib/format";
 import type {
   AppState,
   CartLine,
   CashSession,
+  CatalogMode,
   Payment,
   Product,
   Sale,
   Settings,
+  StoreRecord,
 } from "./types";
 
 const STORAGE_KEY = "caja-local-v1";
+
+function normalizeProduct(p: Product): Product {
+  return {
+    ...p,
+    visibleOnline: Boolean(p.visibleOnline),
+    shared: p.shared !== false,
+  };
+}
 
 const initialState = (): AppState => ({
   products: seedProducts(),
@@ -40,6 +65,7 @@ function loadState(): AppState {
     return {
       ...initialState(),
       ...parsed,
+      products: parsed.products.map(normalizeProduct),
       settings: { storeName: parsed.settings?.storeName || "Mi local" },
     };
   } catch {
@@ -61,7 +87,8 @@ type Action =
     }
   | { type: "cancel-sale"; id: string }
   | { type: "update-settings"; settings: Partial<Settings> }
-  | { type: "reset" };
+  | { type: "reset" }
+  | { type: "hydrate"; state: AppState };
 
 function openSession(state: AppState): CashSession | undefined {
   return state.sessions.find((s) => s.status === "open");
@@ -81,6 +108,8 @@ function applyStock(products: Product[], lines: CartLine[], direction: 1 | -1): 
 
 function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
+    case "hydrate":
+      return action.state;
     case "open-cash": {
       if (openSession(state)) return state;
       const session: CashSession = {
@@ -170,8 +199,13 @@ function reducer(state: AppState, action: Action): AppState {
   }
 }
 
-interface StoreApi {
+export interface StoreApi {
   state: AppState;
+  ready: boolean;
+  cloud: boolean;
+  store: StoreRecord | null;
+  stores: StoreRecord[];
+  catalogMode: CatalogMode;
   openCash: (openingCashCents: number) => void;
   closeCash: (countedCashCents: number, notes: string) => void;
   upsertProduct: (product: Product) => void;
@@ -184,12 +218,18 @@ interface StoreApi {
   ) => Sale | null;
   cancelSale: (id: string) => void;
   updateSettings: (settings: Partial<Settings>) => void;
+  updateCatalogMode: (mode: CatalogMode) => void;
   resetDemo: () => void;
+  importLocalData: () => Promise<void>;
 }
 
 const StoreContext = createContext<StoreApi | null>(null);
 
-export function StoreProvider({ children }: { children: ReactNode }) {
+function inventoryId(storeId: string, productId: string) {
+  return `${storeId}_${productId}`;
+}
+
+function LocalStoreProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, undefined, loadState);
 
   useEffect(() => {
@@ -232,6 +272,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const api = useMemo<StoreApi>(
     () => ({
       state,
+      ready: true,
+      cloud: false,
+      store: null,
+      stores: [],
+      catalogMode: "own",
       openCash: (openingCashCents) => dispatch({ type: "open-cash", openingCashCents }),
       closeCash: (countedCashCents, notes) =>
         dispatch({ type: "close-cash", countedCashCents, notes }),
@@ -240,12 +285,331 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       completeSale,
       cancelSale: (id) => dispatch({ type: "cancel-sale", id }),
       updateSettings: (settings) => dispatch({ type: "update-settings", settings }),
+      updateCatalogMode: () => undefined,
       resetDemo: () => dispatch({ type: "reset" }),
+      importLocalData: async () => undefined,
     }),
     [state, completeSale],
   );
 
   return <StoreContext.Provider value={api}>{children}</StoreContext.Provider>;
+}
+
+function CloudStoreProvider({ children }: { children: ReactNode }) {
+  const { profile, selectedStoreId } = useAuth();
+  const [state, dispatch] = useReducer(reducer, undefined, initialState);
+  const [stores, setStores] = useState<StoreRecord[]>([]);
+  const [ready, setReady] = useState(false);
+  const storeId = selectedStoreId;
+  const businessId = profile?.businessId;
+  const store = stores.find((s) => s.id === storeId) ?? null;
+
+  useEffect(() => {
+    const db = getDb();
+    if (!db || !businessId) {
+      setReady(true);
+      return;
+    }
+    const unsub = onSnapshot(
+      query(collection(db, "stores"), where("businessId", "==", businessId)),
+      (snap) => {
+        setStores(
+          snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<StoreRecord, "id">) })),
+        );
+      },
+    );
+    return () => unsub();
+  }, [businessId]);
+
+  useEffect(() => {
+    const db = getDb();
+    if (!db || !businessId || !storeId) {
+      dispatch({
+        type: "hydrate",
+        state: {
+          products: [],
+          sales: [],
+          sessions: [],
+          settings: { storeName: "Local" },
+          nextTicket: 1,
+        },
+      });
+      setReady(true);
+      return;
+    }
+
+    let products: Product[] = [];
+    let inventory = new Map<string, number>();
+    let sales: Sale[] = [];
+    let sessions: CashSession[] = [];
+    let storeName = "Local";
+    let nextTicket = 1;
+
+    const flush = () => {
+      const current = stores.find((s) => s.id === storeId);
+      const mode = current?.catalogMode ?? "shared";
+      const list = mode === "own" ? products.filter((p) => !p.shared) : products;
+      dispatch({
+        type: "hydrate",
+        state: {
+          products: list.map((p) => ({
+            ...p,
+            stock: inventory.get(p.id) ?? p.stock ?? 0,
+          })),
+          sales,
+          sessions,
+          settings: { storeName: current?.name ?? storeName },
+          nextTicket: current?.nextTicket ?? nextTicket,
+        },
+      });
+      setReady(true);
+    };
+
+    const unsubProducts = onSnapshot(
+      query(collection(db, "products"), where("businessId", "==", businessId)),
+      (snap) => {
+        products = snap.docs.map((d) => {
+          const data = d.data();
+          return normalizeProduct({
+            id: d.id,
+            name: data.name,
+            priceCents: data.priceCents,
+            category: data.category,
+            stock: 0,
+            sku: data.sku ?? "",
+            active: data.active !== false,
+            visibleOnline: Boolean(data.visibleOnline),
+            shared: data.storeId == null,
+          });
+        });
+        flush();
+      },
+    );
+    const unsubInv = onSnapshot(
+      query(collection(db, "inventory"), where("storeId", "==", storeId)),
+      (snap) => {
+        inventory = new Map(
+          snap.docs.map((d) => [d.data().productId as string, Number(d.data().stock) || 0]),
+        );
+        flush();
+      },
+    );
+    const unsubSales = onSnapshot(
+      query(collection(db, "sales"), where("storeId", "==", storeId)),
+      (snap) => {
+        sales = snap.docs
+          .map((d) => ({ id: d.id, ...(d.data() as Omit<Sale, "id">) }))
+          .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+        flush();
+      },
+    );
+    const unsubSessions = onSnapshot(
+      query(collection(db, "sessions"), where("storeId", "==", storeId)),
+      (snap) => {
+        sessions = snap.docs.map((d) => ({
+          id: d.id,
+          ...(d.data() as Omit<CashSession, "id">),
+        }));
+        flush();
+      },
+    );
+
+    return () => {
+      unsubProducts();
+      unsubInv();
+      unsubSales();
+      unsubSessions();
+    };
+  }, [businessId, storeId, stores]);
+
+  const completeSale = useCallback(
+    (
+      lines: CartLine[],
+      payments: Payment[],
+      cashReceivedCents: number,
+      changeCents: number,
+    ): Sale | null => {
+      const session = openSession(state);
+      const db = getDb();
+      if (!session || !db || !storeId || !businessId || !lines.length) return null;
+      const sale: Sale = {
+        id: uid(),
+        ticket: state.nextTicket,
+        createdAt: new Date().toISOString(),
+        sessionId: session.id,
+        storeId,
+        businessId,
+        lines,
+        payments,
+        totalCents: cartTotal(lines),
+        cashReceivedCents,
+        changeCents,
+        cancelled: false,
+      };
+      const batch = writeBatch(db);
+      const { id, ...saleData } = sale;
+      batch.set(doc(db, "sales", id), saleData);
+      for (const line of lines) {
+        const currentStock = state.products.find((p) => p.id === line.productId)?.stock ?? 0;
+        batch.set(
+          doc(db, "inventory", inventoryId(storeId, line.productId)),
+          {
+            storeId,
+            productId: line.productId,
+            businessId,
+            stock: currentStock - line.qty,
+          },
+          { merge: true },
+        );
+      }
+      batch.update(doc(db, "stores", storeId), { nextTicket: increment(1) });
+      void batch.commit();
+      return sale;
+    },
+    [state, storeId, businessId],
+  );
+
+  const api = useMemo<StoreApi>(
+    () => ({
+      state,
+      ready,
+      cloud: true,
+      store,
+      stores,
+      catalogMode: store?.catalogMode ?? "shared",
+      openCash: (openingCashCents) => {
+        const db = getDb();
+        if (!db || !storeId || !businessId || openSession(state)) return;
+        const id = uid();
+        void setDoc(doc(db, "sessions", id), {
+          openedAt: new Date().toISOString(),
+          openingCashCents,
+          notes: "",
+          status: "open",
+          storeId,
+          businessId,
+        });
+      },
+      closeCash: (countedCashCents, notes) => {
+        const db = getDb();
+        const current = openSession(state);
+        if (!db || !current) return;
+        void updateDoc(doc(db, "sessions", current.id), {
+          status: "closed",
+          closedAt: new Date().toISOString(),
+          countedCashCents,
+          notes,
+        });
+      },
+      upsertProduct: (product) => {
+        const db = getDb();
+        if (!db || !businessId || !storeId) return;
+        const shared = product.shared && (store?.catalogMode ?? "shared") === "shared";
+        void setDoc(doc(db, "products", product.id), {
+          businessId,
+          storeId: shared ? null : storeId,
+          name: product.name,
+          priceCents: product.priceCents,
+          category: product.category,
+          sku: product.sku,
+          active: product.active,
+          visibleOnline: product.visibleOnline,
+        });
+        void setDoc(
+          doc(db, "inventory", inventoryId(storeId, product.id)),
+          {
+            storeId,
+            productId: product.id,
+            businessId,
+            stock: product.stock,
+          },
+          { merge: true },
+        );
+      },
+      removeProduct: (id) => {
+        const db = getDb();
+        if (!db) return;
+        void updateDoc(doc(db, "products", id), { active: false });
+      },
+      completeSale,
+      cancelSale: (id) => {
+        const db = getDb();
+        const sale = state.sales.find((s) => s.id === id && !s.cancelled);
+        if (!db || !sale || !storeId || !businessId) return;
+        const batch = writeBatch(db);
+        batch.update(doc(db, "sales", id), { cancelled: true });
+        for (const line of sale.lines) {
+          batch.set(
+            doc(db, "inventory", inventoryId(storeId, line.productId)),
+            {
+              storeId,
+              productId: line.productId,
+              businessId,
+              stock: increment(line.qty),
+            },
+            { merge: true },
+          );
+        }
+        void batch.commit();
+      },
+      updateSettings: (settings) => {
+        const db = getDb();
+        if (!db || !storeId || !settings.storeName) return;
+        void updateDoc(doc(db, "stores", storeId), { name: settings.storeName });
+      },
+      updateCatalogMode: (mode) => {
+        const db = getDb();
+        if (!db || !storeId) return;
+        void updateDoc(doc(db, "stores", storeId), { catalogMode: mode });
+      },
+      resetDemo: () => undefined,
+      importLocalData: async () => {
+        const db = getDb();
+        if (!db || !storeId || !businessId) return;
+        const local = loadState();
+        const batch = writeBatch(db);
+        for (const product of local.products) {
+          batch.set(doc(db, "products", product.id), {
+            businessId,
+            storeId: product.shared ? null : storeId,
+            name: product.name,
+            priceCents: product.priceCents,
+            category: product.category,
+            sku: product.sku,
+            active: product.active,
+            visibleOnline: product.visibleOnline,
+          });
+          batch.set(doc(db, "inventory", inventoryId(storeId, product.id)), {
+            storeId,
+            productId: product.id,
+            businessId,
+            stock: product.stock,
+          });
+        }
+        for (const session of local.sessions) {
+          batch.set(doc(db, "sessions", session.id), {
+            ...session,
+            storeId,
+            businessId,
+          });
+        }
+        for (const sale of local.sales) {
+          const { id, ...data } = sale;
+          batch.set(doc(db, "sales", id), { ...data, storeId, businessId });
+        }
+        await batch.commit();
+      },
+    }),
+    [state, ready, store, stores, completeSale, storeId, businessId],
+  );
+
+  return <StoreContext.Provider value={api}>{children}</StoreContext.Provider>;
+}
+
+export function StoreProvider({ children }: { children: ReactNode }) {
+  const { cloud, profile } = useAuth();
+  if (cloud && profile) return <CloudStoreProvider>{children}</CloudStoreProvider>;
+  return <LocalStoreProvider>{children}</LocalStoreProvider>;
 }
 
 export function useStore() {
@@ -277,3 +641,48 @@ export function sumByMethod(sales: Sale[], method: Payment["method"]): number {
 export function expectedCashCents(session: CashSession, sales: Sale[]): number {
   return session.openingCashCents + sumByMethod(sales, "efectivo");
 }
+
+export async function fetchPublicCatalog(slug: string) {
+  const db = getDb();
+  if (!db) {
+    const local = loadState();
+    return {
+      storeName: local.settings.storeName,
+      products: local.products.filter((p) => p.active && p.visibleOnline),
+    };
+  }
+  const stores = await getDocs(query(collection(db, "stores"), where("slug", "==", slug)));
+  const storeDoc = stores.docs[0];
+  if (!storeDoc) return null;
+  const store = storeDoc.data() as Omit<StoreRecord, "id">;
+  const productsSnap = await getDocs(
+    query(
+      collection(db, "products"),
+      where("businessId", "==", store.businessId),
+      where("visibleOnline", "==", true),
+    ),
+  );
+  const products = productsSnap.docs
+    .map((d) => {
+      const data = d.data();
+      const shared = data.storeId == null;
+      if (store.catalogMode === "own" && shared) return null;
+      if (data.storeId && data.storeId !== storeDoc.id) return null;
+      if (data.active === false) return null;
+      return normalizeProduct({
+        id: d.id,
+        name: data.name,
+        priceCents: data.priceCents,
+        category: data.category,
+        stock: 0,
+        sku: data.sku ?? "",
+        active: true,
+        visibleOnline: true,
+        shared,
+      });
+    })
+    .filter((p): p is Product => Boolean(p));
+  return { storeName: store.name, products };
+}
+
+export { loadState };
