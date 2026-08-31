@@ -1,11 +1,14 @@
-import { SignOut, Storefront } from "@phosphor-icons/react";
+import { BookOpen, Plus, SignOut, Storefront } from "@phosphor-icons/react";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { useAuth } from "../auth";
+import { Modal } from "../components/Modal";
+import { StoreEditModal } from "../components/StoreEditModal";
 import { getDb, isFirebaseConfigured } from "../lib/firebase";
+import { firebaseMessage } from "../lib/firebaseErrors";
 import { money } from "../lib/format";
-import type { CatalogMode, Sale, StoreRecord } from "../types";
+import type { Profile, Sale, StoreRecord } from "../types";
 
 function startOfDay(d = new Date()) {
   const x = new Date(d);
@@ -28,14 +31,23 @@ function sumSales(sales: Sale[], from: Date, to: Date) {
 }
 
 export function PanelPage() {
-  const { profile, signOut, setSelectedStoreId, createStore } = useAuth();
+  const {
+    profile,
+    signOut,
+    setSelectedStoreId,
+    createStore,
+    updateStore,
+    addCashier,
+    removeCashier,
+    deleteStore,
+  } = useAuth();
   const navigate = useNavigate();
   const [stores, setStores] = useState<StoreRecord[]>([]);
   const [sales, setSales] = useState<Sale[]>([]);
+  const [people, setPeople] = useState<Profile[]>([]);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
-  const [mode, setMode] = useState<CatalogMode>("shared");
-  const [cashierEmail, setCashierEmail] = useState("");
-  const [cashierPassword, setCashierPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -45,16 +57,26 @@ export function PanelPage() {
     const unsubStores = onSnapshot(
       query(collection(db, "stores"), where("businessId", "==", profile.businessId)),
       (snap) =>
-        setStores(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<StoreRecord, "id">) }))),
+        setStores(
+          snap.docs
+            .map((d) => ({ id: d.id, ...(d.data() as Omit<StoreRecord, "id">) }))
+            .filter((store) => !store.deleted),
+        ),
     );
     const unsubSales = onSnapshot(
       query(collection(db, "sales"), where("businessId", "==", profile.businessId)),
       (snap) =>
         setSales(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Sale, "id">) }))),
     );
+    const unsubPeople = onSnapshot(
+      query(collection(db, "profiles"), where("businessId", "==", profile.businessId)),
+      (snap) =>
+        setPeople(snap.docs.map((d) => ({ uid: d.id, ...(d.data() as Omit<Profile, "uid">) }))),
+    );
     return () => {
       unsubStores();
       unsubSales();
+      unsubPeople();
     };
   }, [profile]);
 
@@ -76,47 +98,53 @@ export function PanelPage() {
     setBusy(true);
     setError("");
     try {
-      await createStore({
-        name,
-        catalogMode: mode,
-        cashierEmail: cashierEmail || undefined,
-        cashierPassword: cashierPassword || undefined,
-      });
+      await createStore({ name });
       setName("");
-      setCashierEmail("");
-      setCashierPassword("");
-    } catch {
-      setError("No se pudo crear el local. Si cargaste cajero, el correo no puede estar en uso.");
+      setCreating(false);
+    } catch (err) {
+      setError(firebaseMessage(err));
     } finally {
       setBusy(false);
     }
   }
 
-  function openPos(storeId: string) {
-    setSelectedStoreId(storeId);
-    navigate("/caja");
-  }
-
-  const catalogBase = `${window.location.origin}${import.meta.env.BASE_URL}#/catalogo/`;
+  const editingStore = stores.find((s) => s.id === editingId) ?? null;
 
   return (
     <div className="min-h-dvh bg-background">
-      <header className="flex items-center justify-between border-b border-border bg-card px-6 py-3">
-        <div>
+      <header className="flex items-center justify-between gap-3 border-b border-border bg-card px-6 py-3">
+        <div className="min-w-0">
           <p className="text-xs font-semibold uppercase tracking-wide text-primary">Dueño</p>
-          <h1 className="font-display text-xl font-bold">Resumen de locales</h1>
+          <h1 className="font-display truncate text-xl font-bold">Resumen de locales</h1>
         </div>
-        <button
-          type="button"
-          onClick={async () => {
-            await signOut();
-            navigate("/login");
-          }}
-          className="focus-ring inline-flex min-h-9 items-center gap-2 rounded-xl px-3 text-sm font-semibold text-muted-foreground hover:bg-muted"
-        >
-          <SignOut size={16} />
-          Salir
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setCreating(true)}
+            className="focus-ring inline-flex min-h-9 items-center gap-1.5 rounded-xl bg-primary px-3 text-sm font-bold text-on-primary"
+          >
+            <Plus size={16} weight="bold" />
+            Nuevo local
+          </button>
+          <Link
+            to="/panel/catalogo"
+            className="focus-ring inline-flex min-h-9 items-center gap-1.5 rounded-xl bg-muted px-3 text-sm font-bold"
+          >
+            <BookOpen size={16} />
+            Catálogo
+          </Link>
+          <button
+            type="button"
+            onClick={async () => {
+              await signOut();
+              navigate("/login");
+            }}
+            className="focus-ring inline-flex min-h-9 items-center gap-2 rounded-xl px-3 text-sm font-semibold text-muted-foreground hover:bg-muted"
+          >
+            <SignOut size={16} />
+            Salir
+          </button>
+        </div>
       </header>
 
       <main className="mx-auto max-w-5xl space-y-6 p-6">
@@ -126,115 +154,121 @@ export function PanelPage() {
           <SummaryCard label="Este mes" value={money(totals.month)} />
         </section>
 
-        <section className="grid gap-3 md:grid-cols-2">
-          {stores.map((store) => {
-            const storeSales = sales.filter((s) => s.storeId === store.id);
-            return (
-              <article key={store.id} className="rounded-2xl bg-card p-5">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="font-display text-lg font-bold">{store.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {store.catalogMode === "shared"
-                        ? "Catálogo compartido"
-                        : "Catálogo propio"}
-                    </p>
-                  </div>
-                  <Storefront size={22} className="text-primary" />
-                </div>
-                <dl className="mt-4 grid grid-cols-3 gap-2 text-sm">
-                  <div>
-                    <dt className="text-xs text-muted-foreground">Hoy</dt>
-                    <dd className="font-display font-bold tabular">
-                      {money(sumSales(storeSales, today, tomorrow))}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-muted-foreground">Semana</dt>
-                    <dd className="font-display font-bold tabular">
-                      {money(sumSales(storeSales, week, tomorrow))}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-muted-foreground">Mes</dt>
-                    <dd className="font-display font-bold tabular">
-                      {money(sumSales(storeSales, month, tomorrow))}
-                    </dd>
-                  </div>
-                </dl>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => openPos(store.id)}
-                    className="focus-ring min-h-9 rounded-xl bg-primary px-3 text-sm font-bold text-on-primary"
-                  >
-                    Abrir caja
-                  </button>
-                  <a
-                    href={`${catalogBase}${store.slug}`}
-                    className="focus-ring inline-flex min-h-9 items-center rounded-xl bg-muted px-3 text-sm font-bold"
-                  >
-                    Ver catálogo
-                  </a>
-                </div>
-              </article>
-            );
-          })}
+        <section className="overflow-hidden rounded-2xl bg-card">
+          {stores.length === 0 ? (
+            <p className="px-5 py-10 text-center text-sm text-muted-foreground">
+              Todavía no hay locales. Tocá <strong>Nuevo local</strong> arriba a la derecha.
+            </p>
+          ) : (
+            <table className="w-full border-collapse text-left">
+              <thead>
+                <tr className="border-b border-border text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  <th className="px-5 py-2.5 font-semibold">Local</th>
+                  <th className="px-3 py-2.5 text-right font-semibold">Hoy</th>
+                  <th className="px-3 py-2.5 text-right font-semibold">Semana</th>
+                  <th className="px-5 py-2.5 text-right font-semibold">Mes</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...stores]
+                  .sort((a, b) => a.name.localeCompare(b.name, "es"))
+                  .map((store) => {
+                    const storeSales = sales.filter((s) => s.storeId === store.id);
+                    const cashiers = people.filter(
+                      (p) => p.role === "cashier" && p.storeId === store.id && !p.disabled,
+                    );
+                    return (
+                      <tr
+                        key={store.id}
+                        tabIndex={0}
+                        className="cursor-pointer border-b border-border last:border-b-0 hover:bg-muted/70"
+                        onClick={() => setEditingId(store.id)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            setEditingId(store.id);
+                          }
+                        }}
+                      >
+                        <td className="px-5 py-3">
+                          <div className="flex min-w-0 items-start gap-3">
+                            <Storefront size={20} className="mt-0.5 shrink-0 text-primary" />
+                            <div className="min-w-0">
+                              <p className="font-display font-bold">{store.name}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {cashiers.length === 0
+                                  ? "Sin cajeros"
+                                  : cashiers.map((p) => p.name).join(", ")}
+                              </p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-3 py-3 text-right font-display font-bold tabular">
+                          {money(sumSales(storeSales, today, tomorrow))}
+                        </td>
+                        <td className="px-3 py-3 text-right font-display font-bold tabular">
+                          {money(sumSales(storeSales, week, tomorrow))}
+                        </td>
+                        <td className="px-5 py-3 text-right font-display font-bold tabular">
+                          {money(sumSales(storeSales, month, tomorrow))}
+                        </td>
+                      </tr>
+                    );
+                  })}
+              </tbody>
+            </table>
+          )}
         </section>
+        <p className="text-center text-xs text-muted-foreground">
+          Tocá un local para editarlo, cargar usuarios o abrir la caja.
+        </p>
+      </main>
 
-        <form onSubmit={addStore} className="rounded-2xl bg-card p-5">
-          <h2 className="font-display text-lg font-semibold">Nuevo local</h2>
-          {error ? <p className="mt-2 text-sm text-destructive">{error}</p> : null}
-          <div className="mt-3 grid gap-3 sm:grid-cols-2">
-            <label className="text-sm font-semibold">
-              Nombre
-              <input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="field-input mt-1"
-                required
-              />
-            </label>
-            <label className="text-sm font-semibold">
-              Catálogo
-              <select
-                value={mode}
-                onChange={(e) => setMode(e.target.value as CatalogMode)}
-                className="field-input mt-1"
-              >
-                <option value="shared">Compartido (mismo listado, stock propio)</option>
-                <option value="own">Propio de este local</option>
-              </select>
-            </label>
-            <label className="text-sm font-semibold">
-              Correo del cajero (opcional)
-              <input
-                type="email"
-                value={cashierEmail}
-                onChange={(e) => setCashierEmail(e.target.value)}
-                className="field-input mt-1"
-              />
-            </label>
-            <label className="text-sm font-semibold">
-              Contraseña del cajero
-              <input
-                type="password"
-                value={cashierPassword}
-                onChange={(e) => setCashierPassword(e.target.value)}
-                className="field-input mt-1"
-                minLength={6}
-              />
-            </label>
-          </div>
+      <Modal open={creating} title="Nuevo local" onClose={() => setCreating(false)}>
+        <form onSubmit={addStore} className="space-y-3">
+          {error ? (
+            <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-destructive">{error}</p>
+          ) : null}
+          <label className="block text-sm font-semibold">
+            Nombre
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="field-input mt-1"
+              required
+            />
+          </label>
+          <p className="text-xs text-muted-foreground">
+            Usa el catálogo general del negocio. Los cajeros se agregan después, tocando el local.
+          </p>
           <button
             type="submit"
             disabled={busy || !isFirebaseConfigured()}
-            className="focus-ring mt-4 min-h-10 rounded-xl bg-foreground px-4 text-sm font-bold text-on-primary"
+            className="focus-ring min-h-10 w-full rounded-xl bg-primary text-sm font-bold text-on-primary"
           >
-            {busy ? "Creando…" : "Agregar local"}
+            {busy ? "Creando…" : "Crear local"}
           </button>
         </form>
-      </main>
+      </Modal>
+
+      {editingStore ? (
+        <StoreEditModal
+          key={editingStore.id}
+          store={editingStore}
+          cashiers={people.filter(
+            (p) => p.role === "cashier" && p.storeId === editingStore.id && !p.disabled,
+          )}
+          onClose={() => setEditingId(null)}
+          onSaveName={(nextName) => updateStore(editingStore.id, { name: nextName })}
+          onOpenCaja={() => {
+            setSelectedStoreId(editingStore.id);
+            navigate("/caja");
+          }}
+          onAddCashier={(input) => addCashier({ storeId: editingStore.id, ...input })}
+          onRemoveCashier={removeCashier}
+          onDeleteStore={(password) => deleteStore(editingStore.id, password)}
+        />
+      ) : null}
     </div>
   );
 }

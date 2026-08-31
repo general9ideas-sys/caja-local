@@ -206,8 +206,8 @@ export interface StoreApi {
   store: StoreRecord | null;
   stores: StoreRecord[];
   catalogMode: CatalogMode;
-  openCash: (openingCashCents: number) => void;
-  closeCash: (countedCashCents: number, notes: string) => void;
+  openCash: (openingCashCents: number) => void | Promise<void>;
+  closeCash: (countedCashCents: number, notes: string) => void | Promise<void>;
   upsertProduct: (product: Product) => void;
   removeProduct: (id: string) => void;
   completeSale: (
@@ -314,7 +314,9 @@ function CloudStoreProvider({ children }: { children: ReactNode }) {
       query(collection(db, "stores"), where("businessId", "==", businessId)),
       (snap) => {
         setStores(
-          snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<StoreRecord, "id">) })),
+          snap.docs
+            .map((d) => ({ id: d.id, ...(d.data() as Omit<StoreRecord, "id">) }))
+            .filter((store) => !store.deleted),
         );
       },
     );
@@ -347,8 +349,7 @@ function CloudStoreProvider({ children }: { children: ReactNode }) {
 
     const flush = () => {
       const current = stores.find((s) => s.id === storeId);
-      const mode = current?.catalogMode ?? "shared";
-      const list = mode === "own" ? products.filter((p) => !p.shared) : products;
+      const list = products.filter((p) => p.shared);
       dispatch({
         type: "hydrate",
         state: {
@@ -386,30 +387,35 @@ function CloudStoreProvider({ children }: { children: ReactNode }) {
       },
     );
     const unsubInv = onSnapshot(
-      query(collection(db, "inventory"), where("storeId", "==", storeId)),
+      query(collection(db, "inventory"), where("businessId", "==", businessId)),
       (snap) => {
         inventory = new Map(
-          snap.docs.map((d) => [d.data().productId as string, Number(d.data().stock) || 0]),
+          snap.docs
+            .filter((d) => d.data().storeId === storeId)
+            .map((d) => [d.data().productId as string, Number(d.data().stock) || 0]),
         );
         flush();
       },
     );
     const unsubSales = onSnapshot(
-      query(collection(db, "sales"), where("storeId", "==", storeId)),
+      query(collection(db, "sales"), where("businessId", "==", businessId)),
       (snap) => {
         sales = snap.docs
           .map((d) => ({ id: d.id, ...(d.data() as Omit<Sale, "id">) }))
+          .filter((s) => s.storeId === storeId)
           .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
         flush();
       },
     );
     const unsubSessions = onSnapshot(
-      query(collection(db, "sessions"), where("storeId", "==", storeId)),
+      query(collection(db, "sessions"), where("businessId", "==", businessId)),
       (snap) => {
-        sessions = snap.docs.map((d) => ({
-          id: d.id,
-          ...(d.data() as Omit<CashSession, "id">),
-        }));
+        sessions = snap.docs
+          .map((d) => ({
+            id: d.id,
+            ...(d.data() as Omit<CashSession, "id">),
+          }))
+          .filter((s) => s.storeId === storeId);
         flush();
       },
     );
@@ -477,24 +483,48 @@ function CloudStoreProvider({ children }: { children: ReactNode }) {
       store,
       stores,
       catalogMode: store?.catalogMode ?? "shared",
-      openCash: (openingCashCents) => {
+      openCash: async (openingCashCents) => {
         const db = getDb();
-        if (!db || !storeId || !businessId || openSession(state)) return;
+        if (!db || !storeId || !businessId) {
+          throw new Error("No hay un local seleccionado.");
+        }
+        if (openSession(state)) return;
         const id = uid();
-        void setDoc(doc(db, "sessions", id), {
-          openedAt: new Date().toISOString(),
+        const openedAt = new Date().toISOString();
+        await setDoc(doc(db, "sessions", id), {
+          openedAt,
           openingCashCents,
           notes: "",
           status: "open",
           storeId,
           businessId,
         });
+        dispatch({
+          type: "hydrate",
+          state: {
+            ...state,
+            sessions: [
+              ...state.sessions,
+              {
+                id,
+                openedAt,
+                openingCashCents,
+                notes: "",
+                status: "open",
+                storeId,
+                businessId,
+              },
+            ],
+          },
+        });
       },
-      closeCash: (countedCashCents, notes) => {
+      closeCash: async (countedCashCents, notes) => {
         const db = getDb();
         const current = openSession(state);
-        if (!db || !current) return;
-        void updateDoc(doc(db, "sessions", current.id), {
+        if (!db || !current) {
+          throw new Error("No hay una caja abierta.");
+        }
+        await updateDoc(doc(db, "sessions", current.id), {
           status: "closed",
           closedAt: new Date().toISOString(),
           countedCashCents,
@@ -655,6 +685,7 @@ export async function fetchPublicCatalog(slug: string) {
   const storeDoc = stores.docs[0];
   if (!storeDoc) return null;
   const store = storeDoc.data() as Omit<StoreRecord, "id">;
+  if (store.deleted) return null;
   const productsSnap = await getDocs(
     query(
       collection(db, "products"),

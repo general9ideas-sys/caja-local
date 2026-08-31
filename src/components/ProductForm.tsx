@@ -13,6 +13,7 @@ export function ProductForm({
   onClose,
   onSave,
   catalogMode = "own",
+  variant = "pos",
 }: {
   open: boolean;
   product: Product | null;
@@ -20,6 +21,7 @@ export function ProductForm({
   onClose: () => void;
   onSave: (product: Product) => void;
   catalogMode?: "shared" | "own";
+  variant?: "pos" | "business";
 }) {
   const nameId = useId();
   const priceId = useId();
@@ -58,7 +60,7 @@ export function ProductForm({
               setError("Ingresá un precio mayor a cero.");
               return;
             }
-            if (!Number.isInteger(stockN) || stockN < 0) {
+            if (variant !== "business" && (!Number.isInteger(stockN) || stockN < 0)) {
               setError("El stock tiene que ser un número entero de 0 o más.");
               return;
             }
@@ -67,11 +69,11 @@ export function ProductForm({
               name: name.trim(),
               priceCents,
               category: category.trim() || "Otros",
-              stock: stockN,
+              stock: variant === "business" ? 0 : stockN,
               sku: sku.trim(),
               active: true,
               visibleOnline,
-              shared,
+              shared: variant === "business" ? true : shared,
             });
           }}
         >
@@ -150,15 +152,17 @@ export function ProductForm({
               ))}
             </datalist>
           </Field>
-          <Field id={stockId} label="Stock en este local">
-            <input
-              id={stockId}
-              value={stock}
-              onChange={(e) => setStock(e.target.value)}
-              inputMode="numeric"
-              className="field-input"
-            />
-          </Field>
+          {variant === "pos" ? (
+            <Field id={stockId} label="Stock en este local">
+              <input
+                id={stockId}
+                value={stock}
+                onChange={(e) => setStock(e.target.value)}
+                inputMode="numeric"
+                className="field-input"
+              />
+            </Field>
+          ) : null}
           <label className="flex items-center gap-2 text-sm font-semibold">
             <input
               type="checkbox"
@@ -167,15 +171,17 @@ export function ProductForm({
             />
             Visible en el catálogo online
           </label>
-          <label className="flex items-center gap-2 text-sm font-semibold">
-            <input
-              type="checkbox"
-              checked={shared}
-              onChange={(e) => setShared(e.target.checked)}
-              disabled={Boolean(product?.shared)}
-            />
-            Compartir en todos los locales del negocio
-          </label>
+          {variant === "pos" ? (
+            <label className="flex items-center gap-2 text-sm font-semibold">
+              <input
+                type="checkbox"
+                checked={shared}
+                onChange={(e) => setShared(e.target.checked)}
+                disabled={Boolean(product?.shared)}
+              />
+              Compartir en todos los locales del negocio
+            </label>
+          ) : null}
           <button
             type="submit"
             className="focus-ring min-h-10 w-full rounded-xl bg-primary font-display text-sm font-bold text-on-primary hover:bg-primary-dark"

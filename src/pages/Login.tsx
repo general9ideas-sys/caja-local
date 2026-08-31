@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Link, Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth";
+import { firebaseMessage } from "../lib/firebaseErrors";
 
 export function LoginPage() {
   const { cloud, user, profile, signIn } = useAuth();
@@ -20,8 +21,8 @@ export function LoginPage() {
     setError("");
     try {
       await signIn(email, password);
-    } catch {
-      setError("No se pudo entrar. Revisá el correo y la contraseña.");
+    } catch (error) {
+      setError(firebaseMessage(error));
     } finally {
       setBusy(false);
     }
@@ -102,8 +103,8 @@ export function RegisterPage() {
     try {
       await registerOwner({ name, email, password, businessName, storeName });
       navigate("/panel", { replace: true });
-    } catch {
-      setError("No se pudo crear la cuenta. El correo puede estar en uso.");
+    } catch (error) {
+      setError(firebaseMessage(error));
     } finally {
       setBusy(false);
     }

@@ -131,7 +131,7 @@ export function Layout({ children }: { children: ReactNode }) {
             </p>
           </div>
         </header>
-        <main className="min-h-0 flex-1 overflow-hidden">{children}</main>
+        <main className="min-h-0 flex-1 overflow-auto">{children}</main>
       </div>
     </div>
   );

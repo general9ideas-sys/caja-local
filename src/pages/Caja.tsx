@@ -1,7 +1,10 @@
 import { Bank, CreditCard, Money, WarningCircle } from "@phosphor-icons/react";
 import { useId, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "../auth";
 import { Modal } from "../components/Modal";
 import { OpenCashGate } from "../components/OpenCashGate";
+import { firebaseMessage } from "../lib/firebaseErrors";
 import {
   formatDateTime,
   money,
@@ -17,11 +20,14 @@ import {
 
 export function CajaPage() {
   const { state, closeCash, updateSettings, resetDemo, cloud, catalogMode, updateCatalogMode, importLocalData } = useStore();
+  const { signOut } = useAuth();
+  const navigate = useNavigate();
   const session = useOpenSession();
   const [counted, setCounted] = useState("");
   const [notes, setNotes] = useState("");
   const [error, setError] = useState("");
   const [confirmClose, setConfirmClose] = useState(false);
+  const [closing, setClosing] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
   const [storeName, setStoreName] = useState(state.settings.storeName);
   const countedId = useId();
@@ -193,9 +199,12 @@ export function CajaPage() {
         <h2 className="font-display text-xl font-semibold">Local</h2>
         {!cloud ? (
           <p className="mt-2 rounded-xl bg-muted px-3 py-2 text-sm text-muted-foreground">
-            Esta PC guarda los datos solo acá. Para varios locales y el catálogo online, creá un
-            proyecto Firebase, copiá las claves en <code>.env</code> (ver <code>.env.example</code>)
-            y volvé a publicar.
+            Esta PC guarda los datos solo acá. El proyecto Firebase ya es{" "}
+            <strong>ventalocales</strong>.{" "}
+            <a href="#/conectar" className="font-bold text-primary">
+              Seguí estos pasos
+            </a>{" "}
+            para varios locales y el catálogo online.
           </p>
         ) : null}
         <label htmlFor={nameId} className="mt-3 block text-sm font-semibold">
@@ -254,7 +263,8 @@ export function CajaPage() {
         onClose={() => setConfirmClose(false)}
       >
         <p className="text-muted-foreground">
-          Después del cierre vas a tener que abrir una caja nueva para seguir vendiendo.
+          Se cierra el turno y sale de la cuenta. La próxima persona entra con su correo para
+          abrir una caja nueva.
         </p>
         {diff !== null && diff !== 0 ? (
           <p className="mt-3 flex items-start gap-2 rounded-2xl bg-orange-50 px-3 py-3 text-sm font-medium text-accent-dark">
@@ -266,6 +276,7 @@ export function CajaPage() {
         <div className="mt-5 grid grid-cols-2 gap-2">
           <button
             type="button"
+            disabled={closing}
             onClick={() => setConfirmClose(false)}
             className="focus-ring min-h-12 rounded-2xl bg-muted font-bold"
           >
@@ -273,16 +284,33 @@ export function CajaPage() {
           </button>
           <button
             type="button"
+            disabled={closing || countedCents === null}
             onClick={() => {
               if (countedCents === null) return;
-              closeCash(countedCents, notes.trim());
-              setConfirmClose(false);
-              setCounted("");
-              setNotes("");
+              void (async () => {
+                setClosing(true);
+                setError("");
+                try {
+                  await closeCash(countedCents, notes.trim());
+                  setConfirmClose(false);
+                  setCounted("");
+                  setNotes("");
+                  if (cloud) {
+                    await signOut();
+                    navigate("/login", { replace: true });
+                    return;
+                  }
+                } catch (err) {
+                  setConfirmClose(false);
+                  setError(firebaseMessage(err));
+                } finally {
+                  setClosing(false);
+                }
+              })();
             }}
             className="focus-ring min-h-12 rounded-2xl bg-foreground font-bold text-on-primary"
           >
-            Cerrar ahora
+            {closing ? "Cerrando…" : "Cerrar y salir"}
           </button>
         </div>
       </Modal>

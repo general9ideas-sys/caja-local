@@ -4,8 +4,10 @@ import { useAuth } from "./auth";
 import { Layout } from "./components/Layout";
 import { OpenCashGate } from "./components/OpenCashGate";
 import { CatalogoPage } from "./pages/Catalogo";
+import { CatalogoNegocioPage } from "./pages/CatalogoNegocio";
 import { LoginPage, RegisterPage } from "./pages/Login";
 import { PanelPage } from "./pages/Panel";
+import { SetupPage } from "./pages/Setup";
 import { CajaPage } from "./pages/Caja";
 import { ProductosPage } from "./pages/Productos";
 import { VenderPage } from "./pages/Vender";
@@ -73,6 +75,7 @@ function CajaShell() {
 export default function App() {
   return (
     <Routes>
+      <Route path="/conectar" element={<SetupPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/registro" element={<RegisterPage />} />
       <Route path="/catalogo/:slug" element={<CatalogoPage />} />
@@ -81,6 +84,14 @@ export default function App() {
         element={
           <RequireUser owner>
             <PanelPage />
+          </RequireUser>
+        }
+      />
+      <Route
+        path="/panel/catalogo"
+        element={
+          <RequireUser owner>
+            <CatalogoNegocioPage />
           </RequireUser>
         }
       />

@@ -76,6 +76,7 @@ export interface Profile {
   role: UserRole;
   businessId: string;
   storeId?: string;
+  disabled?: boolean;
 }
 
 export interface Business {
@@ -91,4 +92,6 @@ export interface StoreRecord {
   slug: string;
   catalogMode: CatalogMode;
   nextTicket: number;
+  catalogId?: string;
+  deleted?: boolean;
 }

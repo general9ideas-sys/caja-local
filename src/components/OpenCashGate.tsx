@@ -1,22 +1,34 @@
 import { useId, useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
+import { useAuth } from "../auth";
 import { money, parseMoneyToCents } from "../lib/format";
+import { firebaseMessage } from "../lib/firebaseErrors";
 import { useStore } from "../store";
 
 export function OpenCashGate() {
   const { openCash, state } = useStore();
+  const { profile } = useAuth();
   const [raw, setRaw] = useState("0");
   const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
   const inputId = useId();
   const errorId = useId();
 
-  function submit(e: FormEvent) {
+  async function submit(e: FormEvent) {
     e.preventDefault();
     const cents = parseMoneyToCents(raw);
     if (cents === null) {
       setError("Ingresá un monto válido, por ejemplo 10000 o 10.000");
       return;
     }
-    openCash(cents);
+    try {
+      setBusy(true);
+      await openCash(cents);
+    } catch (err) {
+      setError(firebaseMessage(err));
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -69,10 +81,19 @@ export function OpenCashGate() {
         </p>
         <button
           type="submit"
+          disabled={busy}
           className="focus-ring mt-6 min-h-10 w-full rounded-xl bg-primary font-display text-sm font-bold text-on-primary transition-colors duration-200 hover:bg-primary-dark"
         >
-          Abrir caja y vender
+          {busy ? "Abriendo…" : "Abrir caja y vender"}
         </button>
+        {profile?.role === "owner" ? (
+          <Link
+            to="/panel"
+            className="focus-ring mt-3 inline-flex min-h-9 w-full items-center justify-center rounded-xl text-sm font-bold text-muted-foreground hover:bg-muted"
+          >
+            Volver al panel
+          </Link>
+        ) : null}
       </form>
     </div>
   );

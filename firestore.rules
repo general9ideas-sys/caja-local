@@ -16,6 +16,11 @@ service cloud.firestore {
     function isCashierOf(storeId) {
       return signedIn() && profile().role == 'cashier' && profile().storeId == storeId;
     }
+    function ownsBusiness(bizId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/businesses/$(bizId))
+        && get(/databases/$(database)/documents/businesses/$(bizId)).data.ownerId == request.auth.uid;
+    }
 
     match /businesses/{id} {
       allow read: if isMember(id);
@@ -27,12 +32,14 @@ service cloud.firestore {
       allow read: if signedIn() && (request.auth.uid == uid || isOwner(resource.data.businessId));
       allow create: if signedIn();
       allow update: if request.auth.uid == uid || isOwner(resource.data.businessId);
+      allow delete: if isOwner(resource.data.businessId);
     }
 
     match /stores/{id} {
       allow read: if true;
-      allow create: if isOwner(request.resource.data.businessId);
+      allow create: if isOwner(request.resource.data.businessId) || ownsBusiness(request.resource.data.businessId);
       allow update: if isOwner(resource.data.businessId) || isCashierOf(id);
+      allow delete: if isOwner(resource.data.businessId) || ownsBusiness(resource.data.businessId);
     }
 
     match /products/{id} {
