@@ -1,5 +1,6 @@
 import { Barcode, MagnifyingGlass, PencilSimple, Plus, Trash } from "@phosphor-icons/react";
 import { useMemo, useState } from "react";
+import { useAuth } from "../auth";
 import { BarcodeScanner } from "../components/BarcodeScanner";
 import { ProductForm } from "../components/ProductForm";
 import { findByBarcode } from "../lib/barcode";
@@ -8,6 +9,8 @@ import { useStore } from "../store";
 import type { Product } from "../types";
 
 export function ProductosPage() {
+  const { cloud, profile } = useAuth();
+  const canManage = !cloud || profile?.role === "owner";
   const { state, upsertProduct, removeProduct, catalogMode } = useStore();
   const [query, setQuery] = useState("");
   const [editing, setEditing] = useState<Product | null | "new">(null);
@@ -30,8 +33,16 @@ export function ProductosPage() {
     setScanOpen(false);
     const found = findByBarcode(products, code);
     if (found) {
+      if (!canManage) {
+        setQuery(found.name);
+        return;
+      }
       setInitialSku("");
       setEditing(found);
+      return;
+    }
+    if (!canManage) {
+      setQuery(code);
       return;
     }
     setInitialSku(code);
@@ -55,28 +66,35 @@ export function ProductosPage() {
             className="focus-ring min-h-10 w-full rounded-xl border border-border bg-card py-2 pl-10 pr-3 text-sm"
           />
         </label>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => setScanOpen(true)}
-            className="focus-ring inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-xl bg-muted px-4 text-sm font-bold sm:flex-none"
-          >
-            <Barcode size={18} aria-hidden="true" />
-            Escanear
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setInitialSku("");
-              setEditing("new");
-            }}
-            className="focus-ring inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-xl bg-primary px-4 font-display text-sm font-bold text-on-primary hover:bg-primary-dark sm:flex-none"
-          >
-            <Plus size={18} aria-hidden="true" />
-            Nuevo
-          </button>
-        </div>
+        {canManage ? (
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setScanOpen(true)}
+              className="focus-ring inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-xl bg-muted px-4 text-sm font-bold sm:flex-none"
+            >
+              <Barcode size={18} aria-hidden="true" />
+              Escanear
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setInitialSku("");
+                setEditing("new");
+              }}
+              className="focus-ring inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-xl bg-primary px-4 font-display text-sm font-bold text-on-primary hover:bg-primary-dark sm:flex-none"
+            >
+              <Plus size={18} aria-hidden="true" />
+              Nuevo
+            </button>
+          </div>
+        ) : null}
       </div>
+      {canManage ? null : (
+        <p className="mt-3 text-sm text-muted-foreground">
+          Solo consulta. Precio y baja de productos los carga el dueño.
+        </p>
+      )}
 
       <ul className="mt-4 divide-y divide-border overflow-hidden rounded-3xl bg-card">
         {filtered.map((product) => (
@@ -86,29 +104,35 @@ export function ProductosPage() {
               <p className="text-xs text-muted-foreground">
                 {product.category}
                 {product.sku ? ` · ${product.sku}` : ""} · Stock {product.stock}
+                {canManage && product.costCents ? ` · Costo ${money(product.costCents)}` : ""}
+                {canManage && product.markupPercent != null ? ` · +${product.markupPercent}%` : ""}
                 {product.visibleOnline ? " · Catálogo web" : ""}
               </p>
             </div>
             <p className="font-display text-sm font-bold tabular">{money(product.priceCents)}</p>
-            <button
-              type="button"
-              onClick={() => {
-                setInitialSku("");
-                setEditing(product);
-              }}
-              className="focus-ring inline-flex size-9 items-center justify-center rounded-lg hover:bg-muted"
-              aria-label={`Editar ${product.name}`}
-            >
-              <PencilSimple size={18} aria-hidden="true" />
-            </button>
-            <button
-              type="button"
-              onClick={() => removeProduct(product.id)}
-              className="focus-ring inline-flex size-9 items-center justify-center rounded-lg text-destructive hover:bg-red-50"
-              aria-label={`Quitar ${product.name}`}
-            >
-              <Trash size={18} aria-hidden="true" />
-            </button>
+            {canManage ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setInitialSku("");
+                    setEditing(product);
+                  }}
+                  className="focus-ring inline-flex size-9 items-center justify-center rounded-lg hover:bg-muted"
+                  aria-label={`Editar ${product.name}`}
+                >
+                  <PencilSimple size={18} aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => removeProduct(product.id)}
+                  className="focus-ring inline-flex size-9 items-center justify-center rounded-lg text-destructive hover:bg-red-50"
+                  aria-label={`Quitar ${product.name}`}
+                >
+                  <Trash size={18} aria-hidden="true" />
+                </button>
+              </>
+            ) : null}
           </li>
         ))}
       </ul>
@@ -122,7 +146,7 @@ export function ProductosPage() {
             ? `new-${initialSku}`
             : editing?.id ?? "closed"
         }
-        open={editing !== null}
+        open={canManage && editing !== null}
         product={editing === "new" || editing === null ? null : editing}
         initialSku={initialSku}
         catalogMode={catalogMode}

@@ -10,12 +10,22 @@ export interface Product {
   id: string;
   name: string;
   priceCents: number;
+  /** Costo del negocio. Solo el dueño lo ve y lo guarda aparte. */
+  costCents?: number;
+  /** Recargo % sobre el costo. Solo el dueño. */
+  markupPercent?: number;
   category: string;
   stock: number;
   sku: string;
   active: boolean;
   visibleOnline: boolean;
   shared: boolean;
+}
+
+export interface MasterProduct {
+  code: string;
+  name: string;
+  category: string;
 }
 
 export interface CartLine {

@@ -1,4 +1,4 @@
-import { Barcode, PencilSimple, Plus, SignOut, Trash } from "@phosphor-icons/react";
+import { Barcode, PencilSimple, Percent, Plus, SignOut, Trash } from "@phosphor-icons/react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
@@ -9,31 +9,40 @@ import {
   setDoc,
   updateDoc,
   where,
+  writeBatch,
 } from "firebase/firestore";
 import { useAuth } from "../auth";
 import { ProductForm } from "../components/ProductForm";
 import { BarcodeScanner } from "../components/BarcodeScanner";
+import { Modal } from "../components/Modal";
 import { GENERIC_CATALOGS } from "../data/catalogs";
 import { catalogDocId, findByBarcode } from "../lib/barcode";
 import { getDb } from "../lib/firebase";
 import { firebaseMessage } from "../lib/firebaseErrors";
 import { money, uid } from "../lib/format";
+import { publishMasterProduct, saveProductCost } from "../lib/masterCatalog";
+import { parsePercent, salePriceFromCost } from "../lib/pricing";
 import type { Product } from "../types";
 
 export function CatalogoNegocioPage() {
   const { profile, signOut } = useAuth();
   const navigate = useNavigate();
   const [products, setProducts] = useState<Product[]>([]);
+  const [costs, setCosts] = useState<Map<string, { costCents: number; markupPercent?: number }>>(
+    new Map(),
+  );
   const [editing, setEditing] = useState<Product | null | "new">(null);
   const [initialSku, setInitialSku] = useState("");
   const [scanOpen, setScanOpen] = useState(false);
+  const [markupOpen, setMarkupOpen] = useState(false);
+  const [markup, setMarkup] = useState("20");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     const db = getDb();
     if (!db || !profile) return;
-    return onSnapshot(
+    const unsubProducts = onSnapshot(
       query(collection(db, "products"), where("businessId", "==", profile.businessId)),
       (snap) => {
         setProducts(
@@ -56,12 +65,49 @@ export function CatalogoNegocioPage() {
         );
       },
     );
+    const unsubCosts = onSnapshot(
+      query(collection(db, "productCosts"), where("businessId", "==", profile.businessId)),
+      (snap) => {
+        setCosts(
+          new Map(
+            snap.docs
+              .map((d) => {
+                const costCents = Number(d.data().costCents) || 0;
+                const raw = d.data().markupPercent;
+                const markupPercent =
+                  typeof raw === "number" && Number.isFinite(raw) ? raw : undefined;
+                return [d.id, { costCents, markupPercent }] as const;
+              })
+              .filter(([, info]) => info.costCents > 0),
+          ),
+        );
+      },
+    );
+    return () => {
+      unsubProducts();
+      unsubCosts();
+    };
   }, [profile]);
 
-  const sorted = useMemo(
-    () => [...products].sort((a, b) => a.name.localeCompare(b.name, "es")),
-    [products],
+  const withCost = useMemo(
+    () =>
+      products.map((p) => {
+        const info = costs.get(p.id);
+        return {
+          ...p,
+          costCents: info?.costCents,
+          markupPercent: info?.markupPercent,
+        };
+      }),
+    [products, costs],
   );
+
+  const sorted = useMemo(
+    () => [...withCost].sort((a, b) => a.name.localeCompare(b.name, "es")),
+    [withCost],
+  );
+
+  const pricedFromCost = sorted.filter((p) => (p.costCents ?? 0) > 0).length;
 
   async function saveProduct(product: Product) {
     const db = getDb();
@@ -84,6 +130,8 @@ export function CatalogoNegocioPage() {
       },
       { merge: true },
     );
+    await saveProductCost(id, profile.businessId, product.costCents, product.markupPercent);
+    await publishMasterProduct(product.sku, product.name, product.category);
     setEditing(null);
   }
 
@@ -91,6 +139,50 @@ export function CatalogoNegocioPage() {
     const db = getDb();
     if (!db) return;
     await updateDoc(doc(db, "products", id), { active: false });
+  }
+
+  async function applyMarkupToAll() {
+    const db = getDb();
+    if (!db || !profile) return;
+    const percent = parsePercent(markup);
+    if (percent == null) {
+      setError("Ingresá un recargo válido, por ejemplo 20.");
+      return;
+    }
+    const targets = sorted.filter((p) => (p.costCents ?? 0) > 0);
+    if (targets.length === 0) {
+      setError("Ningún producto tiene costo. Cargá el costo y después aplicá el recargo.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      for (let i = 0; i < targets.length; i += 200) {
+        const batch = writeBatch(db);
+        for (const product of targets.slice(i, i + 200)) {
+          batch.set(
+            doc(db, "products", product.id),
+            { priceCents: salePriceFromCost(product.costCents ?? 0, percent) },
+            { merge: true },
+          );
+          batch.set(
+            doc(db, "productCosts", product.id),
+            {
+              businessId: profile.businessId,
+              costCents: product.costCents,
+              markupPercent: percent,
+            },
+            { merge: true },
+          );
+        }
+        await batch.commit();
+      }
+      setMarkupOpen(false);
+    } catch (err) {
+      setError(firebaseMessage(err));
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function loadTemplate(catalogId: string) {
@@ -155,15 +247,23 @@ export function CatalogoNegocioPage() {
 
       <main className="mx-auto max-w-3xl space-y-5 p-6">
         <p className="text-sm text-muted-foreground">
-          Un solo listado para todos los locales. El precio es el mismo; el stock lo carga cada
-          caja.
+          Un solo listado para todos los locales. El precio y el costo son del negocio; el stock lo
+          carga cada caja. Si otro comercio ya escaneó el mismo código, el nombre aparece solo.
         </p>
 
         {error ? (
           <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-destructive">{error}</p>
         ) : null}
 
-        <div className="flex justify-end gap-2">
+        <div className="flex flex-wrap justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => setMarkupOpen(true)}
+            className="focus-ring inline-flex min-h-10 items-center gap-1.5 rounded-xl bg-muted px-4 text-sm font-bold"
+          >
+            <Percent size={16} />
+            Recargo a todos
+          </button>
           <button
             type="button"
             onClick={() => setScanOpen(true)}
@@ -193,6 +293,10 @@ export function CatalogoNegocioPage() {
                 <p className="text-xs text-muted-foreground">
                   {product.category}
                   {product.sku ? ` · ${product.sku}` : ""}
+                  {product.costCents
+                    ? ` · Costo ${money(product.costCents)}`
+                    : " · Sin costo"}
+                  {product.markupPercent != null ? ` · +${product.markupPercent}%` : ""}
                   {product.visibleOnline ? " · Online" : ""}
                 </p>
               </div>
@@ -262,13 +366,44 @@ export function CatalogoNegocioPage() {
           const found = findByBarcode(products, code);
           if (found) {
             setInitialSku("");
-            setEditing(found);
+            setEditing({
+              ...found,
+              costCents: costs.get(found.id)?.costCents,
+              markupPercent: costs.get(found.id)?.markupPercent,
+            });
             return;
           }
           setInitialSku(code);
           setEditing("new");
         }}
       />
+      <Modal open={markupOpen} title="Recargo sobre el costo" onClose={() => setMarkupOpen(false)}>
+        <p className="text-sm text-muted-foreground">
+          Pone el precio de venta de todos los productos que tengan costo. Hoy hay {pricedFromCost}{" "}
+          con costo cargado.
+        </p>
+        <label className="mt-4 block text-sm font-semibold">
+          Porcentaje
+          <div className="mt-1 flex items-center gap-2">
+            <input
+              value={markup}
+              onChange={(e) => setMarkup(e.target.value)}
+              inputMode="decimal"
+              className="field-input"
+              placeholder="20"
+            />
+            <span className="text-sm font-semibold text-muted-foreground">%</span>
+          </div>
+        </label>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => void applyMarkupToAll()}
+          className="focus-ring mt-4 min-h-10 w-full rounded-xl bg-primary text-sm font-bold text-on-primary"
+        >
+          {busy ? "Aplicando…" : "Aplicar a todos"}
+        </button>
+      </Modal>
     </div>
   );
 }

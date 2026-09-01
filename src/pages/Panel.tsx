@@ -8,6 +8,7 @@ import { StoreEditModal } from "../components/StoreEditModal";
 import { getDb, isFirebaseConfigured } from "../lib/firebase";
 import { firebaseMessage } from "../lib/firebaseErrors";
 import { money } from "../lib/format";
+import { periodProfit } from "../lib/profit";
 import type { Profile, Sale, StoreRecord } from "../types";
 
 function startOfDay(d = new Date()) {
@@ -20,14 +21,6 @@ function addDays(d: Date, n: number) {
   const x = new Date(d);
   x.setDate(x.getDate() + n);
   return x;
-}
-
-function sumSales(sales: Sale[], from: Date, to: Date) {
-  const a = from.toISOString();
-  const b = to.toISOString();
-  return sales
-    .filter((s) => !s.cancelled && s.createdAt >= a && s.createdAt < b)
-    .reduce((sum, s) => sum + s.totalCents, 0);
 }
 
 export function PanelPage() {
@@ -44,6 +37,7 @@ export function PanelPage() {
   const navigate = useNavigate();
   const [stores, setStores] = useState<StoreRecord[]>([]);
   const [sales, setSales] = useState<Sale[]>([]);
+  const [costs, setCosts] = useState<Map<string, number>>(new Map());
   const [people, setPeople] = useState<Profile[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -73,10 +67,22 @@ export function PanelPage() {
       (snap) =>
         setPeople(snap.docs.map((d) => ({ uid: d.id, ...(d.data() as Omit<Profile, "uid">) }))),
     );
+    const unsubCosts = onSnapshot(
+      query(collection(db, "productCosts"), where("businessId", "==", profile.businessId)),
+      (snap) =>
+        setCosts(
+          new Map(
+            snap.docs
+              .map((d) => [d.id, Number(d.data().costCents) || 0] as const)
+              .filter(([, n]) => n > 0),
+          ),
+        ),
+    );
     return () => {
       unsubStores();
       unsubSales();
       unsubPeople();
+      unsubCosts();
     };
   }, [profile]);
 
@@ -87,11 +93,11 @@ export function PanelPage() {
 
   const totals = useMemo(() => {
     return {
-      today: sumSales(sales, today, tomorrow),
-      week: sumSales(sales, week, tomorrow),
-      month: sumSales(sales, month, tomorrow),
+      today: periodProfit(sales, today, tomorrow, costs),
+      week: periodProfit(sales, week, tomorrow, costs),
+      month: periodProfit(sales, month, tomorrow, costs),
     };
-  }, [sales]);
+  }, [sales, costs]);
 
   async function addStore(e: FormEvent) {
     e.preventDefault();
@@ -149,9 +155,9 @@ export function PanelPage() {
 
       <main className="mx-auto max-w-5xl space-y-6 p-6">
         <section className="grid gap-3 sm:grid-cols-3">
-          <SummaryCard label="Hoy" value={money(totals.today)} />
-          <SummaryCard label="Últimos 7 días" value={money(totals.week)} />
-          <SummaryCard label="Este mes" value={money(totals.month)} />
+          <SummaryCard label="Hoy" stats={totals.today} />
+          <SummaryCard label="Últimos 7 días" stats={totals.week} />
+          <SummaryCard label="Este mes" stats={totals.month} />
         </section>
 
         <section className="overflow-hidden rounded-2xl bg-card">
@@ -177,6 +183,9 @@ export function PanelPage() {
                     const cashiers = people.filter(
                       (p) => p.role === "cashier" && p.storeId === store.id && !p.disabled,
                     );
+                    const day = periodProfit(storeSales, today, tomorrow, costs);
+                    const weekStats = periodProfit(storeSales, week, tomorrow, costs);
+                    const monthStats = periodProfit(storeSales, month, tomorrow, costs);
                     return (
                       <tr
                         key={store.id}
@@ -203,14 +212,14 @@ export function PanelPage() {
                             </div>
                           </div>
                         </td>
-                        <td className="px-3 py-3 text-right font-display font-bold tabular">
-                          {money(sumSales(storeSales, today, tomorrow))}
+                        <td className="px-3 py-3 text-right">
+                          <StoreAmount stats={day} />
                         </td>
-                        <td className="px-3 py-3 text-right font-display font-bold tabular">
-                          {money(sumSales(storeSales, week, tomorrow))}
+                        <td className="px-3 py-3 text-right">
+                          <StoreAmount stats={weekStats} />
                         </td>
-                        <td className="px-5 py-3 text-right font-display font-bold tabular">
-                          {money(sumSales(storeSales, month, tomorrow))}
+                        <td className="px-5 py-3 text-right">
+                          <StoreAmount stats={monthStats} />
                         </td>
                       </tr>
                     );
@@ -273,11 +282,38 @@ export function PanelPage() {
   );
 }
 
-function SummaryCard({ label, value }: { label: string; value: string }) {
+function SummaryCard({
+  label,
+  stats,
+}: {
+  label: string;
+  stats: { salesCents: number; profitCents: number; missingQty: number };
+}) {
   return (
     <div className="rounded-2xl bg-card p-4">
       <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
-      <p className="font-display mt-1 text-2xl font-bold tabular">{value}</p>
+      <p className="text-xs mt-2 font-semibold text-muted-foreground">Ventas</p>
+      <p className="font-display text-2xl font-bold tabular">{money(stats.salesCents)}</p>
+      <p className="text-xs mt-2 font-semibold text-muted-foreground">Ganancia</p>
+      <p className="font-display text-xl font-bold tabular text-primary">{money(stats.profitCents)}</p>
+      {stats.missingQty > 0 ? (
+        <p className="mt-1 text-xs text-muted-foreground">
+          Falta costo en {stats.missingQty} ítems vendidos.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function StoreAmount({
+  stats,
+}: {
+  stats: { salesCents: number; profitCents: number; missingQty: number };
+}) {
+  return (
+    <div>
+      <p className="font-display font-bold tabular">{money(stats.salesCents)}</p>
+      <p className="text-xs font-semibold tabular text-primary">Gan. {money(stats.profitCents)}</p>
     </div>
   );
 }

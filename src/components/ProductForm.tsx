@@ -1,7 +1,10 @@
 import { Barcode } from "@phosphor-icons/react";
-import { useId, useState, type ReactNode } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
+import { useAuth } from "../auth";
 import { DEFAULT_CATEGORIES } from "../data/seed";
-import { parseMoneyToCents, uid } from "../lib/format";
+import { lookupMasterProduct } from "../lib/masterCatalog";
+import { centsToPriceInput, parsePercent, salePriceFromCost } from "../lib/pricing";
+import { money, parseMoneyToCents, uid } from "../lib/format";
 import type { Product } from "../types";
 import { BarcodeScanner } from "./BarcodeScanner";
 import { Modal } from "./Modal";
@@ -22,20 +25,63 @@ export function ProductForm({
   catalogMode?: "shared" | "own";
   variant?: "pos" | "business";
 }) {
+  const { cloud, profile } = useAuth();
+  const showCost = !cloud || profile?.role === "owner";
   const nameId = useId();
   const priceId = useId();
+  const costId = useId();
+  const markupId = useId();
   const catId = useId();
   const stockId = useId();
   const skuId = useId();
   const errorId = useId();
   const [name, setName] = useState(product?.name ?? "");
-  const [price, setPrice] = useState(product ? String(product.priceCents / 100) : "");
+  const [price, setPrice] = useState(product ? centsToPriceInput(product.priceCents) : "");
+  const [cost, setCost] = useState(
+    product?.costCents && product.costCents > 0 ? centsToPriceInput(product.costCents) : "",
+  );
+  const [markup, setMarkup] = useState(
+    product?.markupPercent != null ? String(product.markupPercent) : "",
+  );
   const [category, setCategory] = useState(product?.category ?? "Otros");
   const [stock, setStock] = useState(String(product?.stock ?? 0));
   const [sku, setSku] = useState(product?.sku || initialSku);
   const [visibleOnline, setVisibleOnline] = useState(product?.visibleOnline ?? false);
   const [error, setError] = useState("");
   const [scanOpen, setScanOpen] = useState(false);
+  const [masterHint, setMasterHint] = useState("");
+
+  useEffect(() => {
+    if (!open || product) return;
+    const code = sku.trim();
+    if (!code) {
+      setMasterHint("");
+      return;
+    }
+    let cancelled = false;
+    void lookupMasterProduct(code).then((hit) => {
+      if (cancelled || !hit) return;
+      setName((current) => current.trim() || hit.name);
+      setCategory((current) => (current && current !== "Otros" ? current : hit.category));
+      setMasterHint(
+        `Este código ya está en el catálogo maestro: ${hit.name}. Completá costo, stock y precio de venta.`,
+      );
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, product, sku]);
+
+  const markupPercent = parsePercent(markup);
+  const costCentsValue = parseMoneyToCents(cost);
+  const pricedFromMarkup =
+    showCost &&
+    costCentsValue != null &&
+    costCentsValue > 0 &&
+    markupPercent != null
+      ? centsToPriceInput(salePriceFromCost(costCentsValue, markupPercent))
+      : null;
+  const priceShown = pricedFromMarkup ?? price;
 
   return (
     <>
@@ -48,7 +94,8 @@ export function ProductForm({
           className="space-y-4"
           onSubmit={(e) => {
             e.preventDefault();
-            const priceCents = parseMoneyToCents(price);
+            const priceCents = parseMoneyToCents(priceShown);
+            const costCents = cost.trim() ? parseMoneyToCents(cost) : 0;
             const stockN = Number(stock);
             if (!name.trim()) {
               setError("El nombre es obligatorio.");
@@ -56,6 +103,10 @@ export function ProductForm({
             }
             if (priceCents === null || priceCents <= 0) {
               setError("Ingresá un precio mayor a cero.");
+              return;
+            }
+            if (showCost && cost.trim() && (costCents === null || costCents < 0)) {
+              setError("Ingresá un costo válido, o dejalo vacío.");
               return;
             }
             if (variant !== "business" && (!Number.isInteger(stockN) || stockN < 0)) {
@@ -66,6 +117,8 @@ export function ProductForm({
               id: product?.id ?? uid(),
               name: name.trim(),
               priceCents,
+              costCents: showCost ? costCents || undefined : product?.costCents,
+              markupPercent: showCost ? markupPercent ?? undefined : product?.markupPercent,
               category: category.trim() || "Otros",
               stock: variant === "business" ? 0 : stockN,
               sku: sku.trim(),
@@ -85,6 +138,10 @@ export function ProductForm({
               <p className="font-display font-semibold">Hay un problema</p>
               <p className="mt-1">{error}</p>
             </div>
+          ) : null}
+
+          {masterHint ? (
+            <p className="rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-900">{masterHint}</p>
           ) : null}
 
           <div>
@@ -123,14 +180,53 @@ export function ProductForm({
               required
             />
           </Field>
+          {showCost ? (
+            <>
+              <Field id={costId} label="Costo (solo vos lo ves)">
+                <input
+                  id={costId}
+                  value={cost}
+                  onChange={(e) => {
+                    setCost(e.target.value);
+                    setError("");
+                  }}
+                  inputMode="decimal"
+                  className="field-input"
+                  placeholder="Opcional"
+                />
+              </Field>
+              <div>
+                <label htmlFor={markupId} className="mb-1.5 block text-sm font-semibold">
+                  Recargo sobre el costo
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    id={markupId}
+                    value={markup}
+                    onChange={(e) => setMarkup(e.target.value)}
+                    inputMode="decimal"
+                    className="field-input min-w-0 flex-1"
+                    placeholder="20"
+                    aria-label="Porcentaje de recargo"
+                  />
+                  <span className="self-center text-sm font-semibold text-muted-foreground">%</span>
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Con recargo, el precio de venta se calcula solo y se guarda. Costo 1000 y 20% →{" "}
+                  {money(salePriceFromCost(100000, 20))}.
+                </p>
+              </div>
+            </>
+          ) : null}
           <Field id={priceId} label="Precio de venta">
             <input
               id={priceId}
-              value={price}
+              value={priceShown}
               onChange={(e) => {
                 setPrice(e.target.value);
                 setError("");
               }}
+              readOnly={pricedFromMarkup != null}
               inputMode="decimal"
               className="field-input"
               placeholder="1500"

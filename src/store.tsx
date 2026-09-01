@@ -24,6 +24,7 @@ import { useAuth } from "./auth";
 import { seedProducts } from "./data/seed";
 import { catalogDocId } from "./lib/barcode";
 import { getDb } from "./lib/firebase";
+import { publishMasterProduct, saveProductCost } from "./lib/masterCatalog";
 import { cartTotal, uid } from "./lib/format";
 import type {
   AppState,
@@ -307,6 +308,7 @@ function CloudStoreProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
   const storeId = selectedStoreId;
   const businessId = profile?.businessId;
+  const isOwner = profile?.role === "owner";
   const store = stores.find((s) => s.id === storeId) ?? null;
 
   useEffect(() => {
@@ -346,6 +348,7 @@ function CloudStoreProvider({ children }: { children: ReactNode }) {
     }
 
     let products: Product[] = [];
+    let costs = new Map<string, { costCents: number; markupPercent?: number }>();
     let inventory = new Map<string, number>();
     let sales: Sale[] = [];
     let sessions: CashSession[] = [];
@@ -361,6 +364,8 @@ function CloudStoreProvider({ children }: { children: ReactNode }) {
             ...p,
             shared: true,
             stock: inventory.get(p.id) ?? 0,
+            costCents: isOwner ? costs.get(p.id)?.costCents : undefined,
+            markupPercent: isOwner ? costs.get(p.id)?.markupPercent : undefined,
           })),
           sales,
           sessions,
@@ -424,14 +429,34 @@ function CloudStoreProvider({ children }: { children: ReactNode }) {
         flush();
       },
     );
+    const unsubCosts = isOwner
+      ? onSnapshot(
+          query(collection(db, "productCosts"), where("businessId", "==", businessId)),
+          (snap) => {
+            costs = new Map(
+              snap.docs
+                .map((d) => {
+                  const costCents = Number(d.data().costCents) || 0;
+                  const raw = d.data().markupPercent;
+                  const markupPercent =
+                    typeof raw === "number" && Number.isFinite(raw) ? raw : undefined;
+                  return [d.id, { costCents, markupPercent }] as const;
+                })
+                .filter(([, info]) => info.costCents > 0),
+            );
+            flush();
+          },
+        )
+      : () => undefined;
 
     return () => {
       unsubProducts();
       unsubInv();
       unsubSales();
       unsubSessions();
+      unsubCosts();
     };
-  }, [businessId, storeId, stores]);
+  }, [businessId, storeId, stores, isOwner]);
 
   const completeSale = useCallback(
     (
@@ -540,21 +565,27 @@ function CloudStoreProvider({ children }: { children: ReactNode }) {
         const db = getDb();
         if (!db || !businessId || !storeId) return product;
         const id = catalogDocId(businessId, product.sku, product.id);
-        const next: Product = { ...product, id, shared: true };
-        void setDoc(
-          doc(db, "products", id),
-          {
-            businessId,
-            storeId: null,
-            name: next.name,
-            priceCents: next.priceCents,
-            category: next.category,
-            sku: next.sku,
-            active: next.active,
-            visibleOnline: next.visibleOnline,
-          },
-          { merge: true },
+        const exists = state.products.some(
+          (p) => p.id === id || (product.sku && p.active && p.sku.trim() === product.sku.trim()),
         );
+        const next: Product = { ...product, id, shared: true };
+        if (isOwner || !exists) {
+          void setDoc(
+            doc(db, "products", id),
+            {
+              businessId,
+              storeId: null,
+              name: next.name,
+              priceCents: next.priceCents,
+              category: next.category,
+              sku: next.sku,
+              active: next.active,
+              visibleOnline: next.visibleOnline,
+            },
+            { merge: true },
+          );
+          void publishMasterProduct(next.sku, next.name, next.category);
+        }
         void setDoc(
           doc(db, "inventory", inventoryId(storeId, id)),
           {
@@ -565,11 +596,14 @@ function CloudStoreProvider({ children }: { children: ReactNode }) {
           },
           { merge: true },
         );
+        if (isOwner) {
+          void saveProductCost(id, businessId, next.costCents, next.markupPercent);
+        }
         return next;
       },
       removeProduct: (id) => {
         const db = getDb();
-        if (!db) return;
+        if (!db || !isOwner) return;
         void updateDoc(doc(db, "products", id), { active: false });
       },
       completeSale,
@@ -641,7 +675,7 @@ function CloudStoreProvider({ children }: { children: ReactNode }) {
         await batch.commit();
       },
     }),
-    [state, ready, store, stores, completeSale, storeId, businessId],
+    [state, ready, store, stores, completeSale, storeId, businessId, isOwner],
   );
 
   return <StoreContext.Provider value={api}>{children}</StoreContext.Provider>;

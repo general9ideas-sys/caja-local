@@ -21,6 +21,7 @@ import {
   money,
   parseMoneyToCents,
 } from "../lib/format";
+import { lookupMasterProduct } from "../lib/masterCatalog";
 import { useStore } from "../store";
 import type { CartLine, Payment, PaymentMethod, Product, Sale } from "../types";
 
@@ -59,6 +60,7 @@ export function VenderPage() {
   const [done, setDone] = useState<Sale | null>(null);
   const [scanOpen, setScanOpen] = useState(false);
   const [unknownCode, setUnknownCode] = useState<string | null>(null);
+  const [masterHint, setMasterHint] = useState("");
   const [registerCode, setRegisterCode] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
 
@@ -121,6 +123,21 @@ export function VenderPage() {
     !ticketOpen && !payOpen && !done && !scanOpen && !unknownCode && !registerCode,
     applyBarcode,
   );
+
+  useEffect(() => {
+    if (!unknownCode) {
+      setMasterHint("");
+      return;
+    }
+    let cancelled = false;
+    void lookupMasterProduct(unknownCode).then((hit) => {
+      if (cancelled || !hit) return;
+      setMasterHint(`En el catálogo maestro aparece como ${hit.name}.`);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [unknownCode]);
 
   useEffect(() => {
     if (!notice) return;
@@ -307,6 +324,7 @@ export function VenderPage() {
           <span className="font-display font-semibold text-foreground">{unknownCode}</span>.
           Podés registrarlo ahora y se suma al ticket.
         </p>
+        {masterHint ? <p className="mt-3 text-sm font-semibold text-primary">{masterHint}</p> : null}
         <div className="mt-5 grid grid-cols-2 gap-2">
           <button
             type="button"
