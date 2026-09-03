@@ -27,6 +27,7 @@ export function StoreEditModal({
   const [cashierName, setCashierName] = useState("");
   const [cashierEmail, setCashierEmail] = useState("");
   const [cashierPassword, setCashierPassword] = useState("");
+  const [cashierPasswordConfirm, setCashierPasswordConfirm] = useState("");
   const [ownerPassword, setOwnerPassword] = useState("");
   const [confirmName, setConfirmName] = useState("");
   const [error, setError] = useState("");
@@ -54,6 +55,10 @@ export function StoreEditModal({
 
   function addUser(e: FormEvent) {
     e.preventDefault();
+    if (cashierPassword !== cashierPasswordConfirm) {
+      setError("Las contraseñas no coinciden.");
+      return;
+    }
     void run(async () => {
       await onAddCashier({
         name: cashierName,
@@ -63,6 +68,7 @@ export function StoreEditModal({
       setCashierName("");
       setCashierEmail("");
       setCashierPassword("");
+      setCashierPasswordConfirm("");
     });
   }
 
@@ -161,7 +167,7 @@ export function StoreEditModal({
             required
           />
         </label>
-        <label className="sm:col-span-2 text-sm font-semibold">
+        <label className="text-sm font-semibold">
           Contraseña (6 caracteres o más)
           <input
             type="password"
@@ -169,6 +175,19 @@ export function StoreEditModal({
             onChange={(e) => setCashierPassword(e.target.value)}
             className="field-input mt-1"
             minLength={6}
+            autoComplete="new-password"
+            required
+          />
+        </label>
+        <label className="text-sm font-semibold">
+          Repetir contraseña
+          <input
+            type="password"
+            value={cashierPasswordConfirm}
+            onChange={(e) => setCashierPasswordConfirm(e.target.value)}
+            className="field-input mt-1"
+            minLength={6}
+            autoComplete="new-password"
             required
           />
         </label>
