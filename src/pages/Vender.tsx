@@ -8,7 +8,7 @@ import {
   Plus,
   Trash,
 } from "@phosphor-icons/react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { BarcodeScanner } from "../components/BarcodeScanner";
 import { Modal } from "../components/Modal";
 import { ProductForm } from "../components/ProductForm";
@@ -503,34 +503,46 @@ function PayModal({
   const [method, setMethod] = useState<PaymentMethod>("efectivo");
   const [paidRaw, setPaidRaw] = useState("");
   const [error, setError] = useState("");
+  const cashRef = useRef<HTMLInputElement>(null);
+  const confirmRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!open) return;
     setMethod("efectivo");
     setPaidRaw("");
     setError("");
+    const timer = window.setTimeout(() => cashRef.current?.focus(), 30);
+    return () => window.clearTimeout(timer);
   }, [open]);
 
-  const paidCents = parseMoneyToCents(paidRaw) ?? 0;
-  const change = method === "efectivo" ? paidCents - totalCents : 0;
-  const exact = method !== "efectivo" || paidCents >= totalCents;
+  const typedCents = parseMoneyToCents(paidRaw);
+  const receivedCents =
+    method === "efectivo" && (paidRaw.trim() === "" || typedCents === null)
+      ? totalCents
+      : typedCents ?? 0;
+  const change = method === "efectivo" ? receivedCents - totalCents : 0;
+  const canConfirm = method !== "efectivo" || receivedCents >= totalCents;
 
   function choose(next: PaymentMethod) {
     setMethod(next);
     setError("");
-    setPaidRaw(next === "efectivo" ? "" : moneyPlainInput(totalCents));
+    setPaidRaw("");
+    window.setTimeout(() => {
+      if (next === "efectivo") cashRef.current?.focus();
+      else confirmRef.current?.focus();
+    }, 0);
   }
 
   function confirm() {
     if (method === "efectivo") {
-      if (paidCents < totalCents) {
+      if (receivedCents < totalCents) {
         setError("El efectivo recibido no cubre el total.");
         return;
       }
       onConfirm(
         [{ method: "efectivo", amountCents: totalCents }],
-        paidCents,
-        paidCents - totalCents,
+        receivedCents,
+        receivedCents - totalCents,
       );
       setPaidRaw("");
       setMethod("efectivo");
@@ -542,79 +554,105 @@ function PayModal({
   }
 
   return (
-    <Modal open={open} title="Cobrar" onClose={onClose} wide>
-      <p className="text-sm font-semibold text-muted-foreground">Total a cobrar</p>
-      <p className="font-display text-4xl font-bold tabular">{money(totalCents)}</p>
+    <Modal open={open} title="Cobrar" onClose={onClose}>
+      <form
+        className="space-y-4"
+        onSubmit={(e) => {
+          e.preventDefault();
+          confirm();
+        }}
+      >
+        <button
+          ref={confirmRef}
+          type="submit"
+          disabled={!canConfirm}
+          className="focus-ring min-h-12 w-full rounded-xl bg-accent font-display text-base font-extrabold text-on-accent hover:bg-accent-dark disabled:bg-muted disabled:text-muted-foreground"
+        >
+          Confirmar cobro
+        </button>
 
-      {error ? (
-        <div role="alert" tabIndex={-1} className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-sm font-medium text-destructive">
-          <p className="font-display font-semibold">Hay un problema</p>
-          <p className="mt-1">{error}</p>
+        <div>
+          <p className="text-sm font-semibold text-muted-foreground">Total</p>
+          <p className="font-display text-4xl font-bold tabular">{money(totalCents)}</p>
         </div>
-      ) : null}
 
-      <div className="mt-5 grid grid-cols-3 gap-2">
-        {(
-          [
-            ["efectivo", "Efectivo", Money],
-            ["tarjeta", "Tarjeta", CreditCard],
-            ["transferencia", "Transfer.", Bank],
-          ] as const
-        ).map(([id, label, Icon]) => {
-          const pressed = method === id;
-          return (
-            <button
-              key={id}
-              type="button"
-              aria-pressed={pressed}
-              onClick={() => choose(id)}
-              className={`focus-ring flex min-h-[4.5rem] flex-col items-center justify-center gap-1 rounded-xl border text-sm font-bold transition-colors duration-200 ${
-                pressed
-                  ? "border-primary bg-primary text-on-primary"
-                  : "border-border bg-background hover:border-primary"
-              }`}
-            >
-              <Icon size={22} aria-hidden="true" />
-              {label}
-            </button>
-          );
-        })}
-      </div>
-
-      {method === "efectivo" ? (
-        <div className="mt-5">
-          <label htmlFor="cash-received" className="text-sm font-semibold">
-            ¿Con cuánto paga?
-          </label>
-          <input
-            id="cash-received"
-            value={paidRaw}
-            onChange={(e) => {
-              setPaidRaw(e.target.value);
-              setError("");
-            }}
-            inputMode="decimal"
-            className="focus-ring mt-2 w-full rounded-2xl border border-border bg-background px-4 py-4 font-display text-2xl font-semibold tabular"
-            placeholder={moneyPlainInput(totalCents)}
-          />
-          <div className="mt-3 flex flex-wrap gap-2">
-            {suggestedCash(totalCents).map((value) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() => {
-                  setPaidRaw(moneyPlainInput(value));
-                  setError("");
-                }}
-                className="focus-ring min-h-11 rounded-xl bg-muted px-3 text-sm font-bold tabular hover:bg-border"
-              >
-                {value === totalCents ? "Exacto" : money(value)}
-              </button>
-            ))}
+        {error ? (
+          <div
+            role="alert"
+            tabIndex={-1}
+            className="rounded-2xl bg-red-50 px-4 py-3 text-sm font-medium text-destructive"
+          >
+            <p className="font-display font-semibold">Hay un problema</p>
+            <p className="mt-1">{error}</p>
           </div>
-          <div className="mt-3 grid items-start gap-4 sm:grid-cols-[1fr_200px]">
-            <div className="flex items-center justify-between rounded-2xl bg-background px-4 py-3">
-              <span className="font-semibold text-muted-foreground">Vuelto</span>
+        ) : null}
+
+        <div className="grid grid-cols-3 gap-2">
+          {(
+            [
+              ["efectivo", "Efectivo", Money],
+              ["tarjeta", "Tarjeta", CreditCard],
+              ["transferencia", "Transfer.", Bank],
+            ] as const
+          ).map(([id, label, Icon]) => {
+            const pressed = method === id;
+            return (
+              <button
+                key={id}
+                type="button"
+                aria-pressed={pressed}
+                onClick={() => choose(id)}
+                className={`focus-ring flex min-h-12 flex-col items-center justify-center gap-0.5 rounded-xl border text-sm font-bold ${
+                  pressed
+                    ? "border-primary bg-primary text-on-primary"
+                    : "border-border bg-background hover:border-primary"
+                }`}
+              >
+                <Icon size={18} aria-hidden="true" />
+                {label}
+              </button>
+            );
+          })}
+        </div>
+
+        {method === "efectivo" ? (
+          <div>
+            <label htmlFor="cash-received" className="text-sm font-semibold">
+              ¿Con cuánto paga?
+            </label>
+            <input
+              ref={cashRef}
+              id="cash-received"
+              value={paidRaw}
+              onChange={(e) => {
+                setPaidRaw(e.target.value);
+                setError("");
+              }}
+              inputMode="decimal"
+              autoComplete="off"
+              className="focus-ring mt-1.5 w-full rounded-xl border border-border bg-background px-3 py-2.5 font-display text-2xl font-semibold tabular"
+              placeholder={`${moneyPlainInput(totalCents)} · Enter es exacto`}
+            />
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {suggestedCash(totalCents)
+                .slice(0, 4)
+                .map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => {
+                      setPaidRaw(value === totalCents ? "" : moneyPlainInput(value));
+                      setError("");
+                      cashRef.current?.focus();
+                    }}
+                    className="focus-ring min-h-9 rounded-lg bg-muted px-2.5 text-sm font-bold tabular hover:bg-border"
+                  >
+                    {value === totalCents ? "Exacto" : money(value)}
+                  </button>
+                ))}
+            </div>
+            <div className="mt-3 flex items-center justify-between rounded-xl bg-background px-3 py-2.5">
+              <span className="text-sm font-semibold text-muted-foreground">Vuelto</span>
               <span
                 className={`font-display text-2xl font-bold tabular ${
                   change >= 0 ? "text-accent" : "text-destructive"
@@ -623,67 +661,17 @@ function PayModal({
                 {money(Math.max(change, 0))}
               </span>
             </div>
-            <Keypad
-              onDigit={(d) => setPaidRaw((prev) => prev + d)}
-              onBack={() => setPaidRaw((prev) => prev.slice(0, -1))}
-              onClear={() => setPaidRaw("")}
-            />
           </div>
-        </div>
-      ) : (
-        <p className="mt-5 rounded-2xl bg-background px-4 py-3 text-sm text-muted-foreground">
-          Se registra el cobro completo con {METHOD_LABEL[method].toLowerCase()}.
-        </p>
-      )}
-
-      <button
-        type="button"
-        disabled={method === "efectivo" && !exact}
-        onClick={confirm}
-        className="focus-ring mt-5 min-h-11 w-full rounded-xl bg-accent font-display text-base font-extrabold text-on-accent hover:bg-accent-dark disabled:bg-muted disabled:text-muted-foreground"
-      >
-        Confirmar cobro
-      </button>
+        ) : (
+          <p className="rounded-xl bg-background px-3 py-2.5 text-sm text-muted-foreground">
+            Se registra el cobro completo con {METHOD_LABEL[method].toLowerCase()}.
+          </p>
+        )}
+      </form>
     </Modal>
   );
 }
 
 function moneyPlainInput(cents: number): string {
   return (cents / 100).toFixed(2).replace(".", ",");
-}
-
-function Keypad({
-  onDigit,
-  onBack,
-  onClear,
-}: {
-  onDigit: (d: string) => void;
-  onBack: () => void;
-  onClear: () => void;
-}) {
-  const keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", ",", "0", "←"];
-  return (
-    <div className="grid grid-cols-3 gap-2">
-      {keys.map((key) => (
-        <button
-          key={key}
-          type="button"
-          onClick={() => {
-            if (key === "←") onBack();
-            else onDigit(key);
-          }}
-          className="focus-ring min-h-12 rounded-2xl bg-muted font-display text-xl font-bold hover:bg-border"
-        >
-          {key}
-        </button>
-      ))}
-      <button
-        type="button"
-        onClick={onClear}
-        className="focus-ring col-span-3 min-h-12 rounded-2xl text-sm font-bold text-muted-foreground hover:bg-muted"
-      >
-        Borrar todo
-      </button>
-    </div>
-  );
 }
